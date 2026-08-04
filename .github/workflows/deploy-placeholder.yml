@@ -1,0 +1,43 @@
+name: Deploy Placeholder
+
+# Manual / branch-gated deployment stub — does not push to any cloud.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: Image tag to deploy
+        required: false
+        default: latest
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Print deployment plan
+        run: |
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Image tag: ${{ github.event.inputs.image_tag }}"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: Deployment placeholder
+        run: |
+          echo "::notice::Wire your host here (SSH to VPS, Railway CLI, Render API, etc.)."
+          echo "Suggested compose command:"
+          echo "  docker compose -f docker-compose.yml --env-file .env.${{ github.event.inputs.environment }} up -d --build"
+          echo "No secrets are written and no remote deploy is performed."

@@ -1,0 +1,107 @@
+# DineFlow — development Docker Compose
+# Usage:
+#   cp .env.development.example .env.development
+#   docker compose -f docker-compose.dev.yml --env-file .env.development up --build
+
+name: dineflow-dev
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-DineFlow}
+        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-0.1.0}
+        NEXT_PUBLIC_BUILD_ID: ${NEXT_PUBLIC_BUILD_ID:-dev}
+    image: dineflow-app:dev
+    container_name: dineflow-app-dev
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      APP_ENV: development
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017/dineflow}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-dineflow}
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-secret-change-me-32chars}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_DEMO_EMAIL: ${AUTH_DEMO_EMAIL:-admin@dineflow.local}
+      AUTH_DEMO_PASSWORD: ${AUTH_DEMO_PASSWORD:-Demo@12345}
+      AUTH_DEMO_ROLE: ${AUTH_DEMO_ROLE:-manager}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-DineFlow}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - dineflow-dev-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://127.0.0.1:3000/api/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  mongodb:
+    image: mongo:7.0
+    container_name: dineflow-mongodb-dev
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGODB_DB_NAME:-dineflow}
+    volumes:
+      - dineflow-mongo-dev-data:/data/db
+    networks:
+      - dineflow-dev-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: dineflow-mongo-express
+    restart: unless-stopped
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_BASICAUTH: "false"
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - dineflow-dev-network
+    profiles:
+      - tools
+
+networks:
+  dineflow-dev-network:
+    driver: bridge
+    name: dineflow-dev-network
+
+volumes:
+  dineflow-mongo-dev-data:
+    name: dineflow-mongo-dev-data

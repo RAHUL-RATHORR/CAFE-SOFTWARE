@@ -1,0 +1,100 @@
+# DineFlow — production Docker Compose
+# Usage:
+#   cp .env.production.example .env.production
+#   docker compose -f docker-compose.yml --env-file .env.production up -d --build
+
+name: dineflow
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-DineFlow}
+        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-0.1.0}
+        NEXT_PUBLIC_BUILD_ID: ${NEXT_PUBLIC_BUILD_ID:-local}
+    image: dineflow-app:${IMAGE_TAG:-latest}
+    container_name: dineflow-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      APP_ENV: ${APP_ENV:-production}
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017/dineflow}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-dineflow}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-DineFlow}
+      NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-0.1.0}
+      NEXT_PUBLIC_BUILD_ID: ${NEXT_PUBLIC_BUILD_ID:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - dineflow-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://127.0.0.1:3000/api/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    read_only: false
+    security_opt:
+      - no-new-privileges:true
+
+  mongodb:
+    image: mongo:7.0
+    container_name: dineflow-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGODB_DB_NAME:-dineflow}
+    volumes:
+      - dineflow-mongo-data:/data/db
+    networks:
+      - dineflow-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dineflow-network:
+    driver: bridge
+    name: dineflow-network
+
+volumes:
+  dineflow-mongo-data:
+    name: dineflow-mongo-data

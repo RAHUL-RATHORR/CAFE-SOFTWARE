@@ -1,0 +1,41 @@
+/**
+ * Canonical Auth.js entry for DineFlow.
+ * Implementation lives in `@/lib/auth` — this module re-exports for the
+ * required `src/auth` architecture surface.
+ */
+export {
+  handlers,
+  auth,
+  signIn,
+  signOut,
+  authConfig,
+  getServerSession,
+  getCurrentUser,
+  requireAuth,
+  requireGuest,
+  requireRole,
+  requirePermission,
+  isAuthenticated,
+  logout,
+  refreshSessionPlaceholder,
+  hasPermission,
+  hasRole,
+  createMongoAuthAdapter,
+  authRoleFoundation,
+  APP_ROLES,
+  APP_ROLE_LABELS,
+  AUTH_ROUTES,
+  DEFAULT_AUTHENTICATED_REDIRECT,
+  DEFAULT_UNAUTHENTICATED_REDIRECT,
+  resolveAuthErrorMessage,
+  authSecurityConfig,
+  SESSION_MAX_AGE_DEFAULT,
+  SESSION_MAX_AGE_REMEMBER,
+  isGuestRoute,
+  isProtectedRoute,
+  isPublicRoute,
+  isAdminRoute,
+  isRestaurantRoute,
+  getRouteKind,
+  getRouteProtection,
+} from "@/lib/auth";
