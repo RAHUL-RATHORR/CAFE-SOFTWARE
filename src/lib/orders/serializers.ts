@@ -66,6 +66,20 @@ export function serializeOrderLineItem(item: {
     tax,
     subtotal,
     notes: item.notes ?? "",
+    customizations: Array.isArray(
+      (item as { customizations?: OrderLineItem["customizations"] }).customizations
+    )
+      ? (
+          (item as { customizations: OrderLineItem["customizations"] })
+            .customizations ?? []
+        ).map((row) => ({
+          groupId: row.groupId ?? "",
+          groupName: row.groupName ?? "",
+          optionId: row.optionId ?? "",
+          optionName: row.optionName ?? "",
+          priceDelta: Number(row.priceDelta ?? 0),
+        }))
+      : [],
   };
 }
 

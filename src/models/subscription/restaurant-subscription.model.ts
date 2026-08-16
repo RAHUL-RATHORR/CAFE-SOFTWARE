@@ -10,7 +10,19 @@ import { tenantScopeDefinition } from "@/models/shared";
 import {
   SAAS_SUBSCRIPTION_STATUSES,
   BILLING_CYCLES,
+  PAYMENT_PROVIDER_STATUSES,
 } from "@/types/subscription";
+
+const pendingPlanChangeSchema = new Schema(
+  {
+    planId: { type: Schema.Types.ObjectId, ref: "SubscriptionPlan", default: null },
+    mode: { type: String, enum: ["upgrade", "downgrade"], required: true },
+    billingCycle: { type: String, enum: BILLING_CYCLES, default: null },
+    scheduledFor: { type: Date, default: null },
+    reason: { type: String, trim: true, maxlength: 500, default: "" },
+  },
+  { _id: false }
+);
 
 const restaurantSubscriptionSchema = new Schema(
   withBaseFields({
@@ -24,7 +36,7 @@ const restaurantSubscriptionSchema = new Schema(
     status: {
       type: String,
       enum: SAAS_SUBSCRIPTION_STATUSES,
-      default: "trial",
+      default: "trialing",
       index: true,
     },
     billingCycle: {
@@ -36,8 +48,25 @@ const restaurantSubscriptionSchema = new Schema(
     trialEnd: { type: Date, default: null },
     subscriptionStart: { type: Date, default: null },
     subscriptionEnd: { type: Date, default: null },
+    currentPeriodStart: { type: Date, default: null },
+    currentPeriodEnd: { type: Date, default: null },
+    gracePeriodEnd: { type: Date, default: null },
     renewalDate: { type: Date, default: null },
     cancelledAt: { type: Date, default: null },
+    cancelAtPeriodEnd: { type: Boolean, default: false },
+    pendingPlanChange: { type: pendingPlanChangeSchema, default: null },
+    provider: { type: String, trim: true, maxlength: 40, default: null },
+    providerSubscriptionId: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      default: null,
+    },
+    paymentStatus: {
+      type: String,
+      enum: PAYMENT_PROVIDER_STATUSES,
+      default: "not_configured",
+    },
     licenseKey: {
       type: String,
       required: true,

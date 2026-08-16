@@ -100,14 +100,19 @@ const restaurantTableSchema = new Schema(
   }
 );
 
+/**
+ * Branch-scoped uniqueness. Legacy rows with branchId=null remain unique
+ * within that null-branch bucket per restaurant.
+ */
 restaurantTableSchema.index(
-  { restaurantId: 1, tableNumber: 1 },
+  { restaurantId: 1, branchId: 1, tableNumber: 1 },
   {
     unique: true,
     partialFilterExpression: { isDeleted: false },
   }
 );
 restaurantTableSchema.index({ restaurantId: 1, status: 1, isDeleted: 1 });
+restaurantTableSchema.index({ restaurantId: 1, branchId: 1, isDeleted: 1 });
 restaurantTableSchema.index({ restaurantId: 1, floorId: 1 });
 restaurantTableSchema.index({ restaurantId: 1, displayOrder: 1 });
 restaurantTableSchema.index({ restaurantId: 1, createdAt: -1 });

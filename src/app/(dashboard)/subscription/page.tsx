@@ -15,6 +15,21 @@ const emptySummary: SubscriptionDashboardSummary = {
   featureAccess: null,
   recentInvoices: [],
   upgradeAvailable: false,
+  access: {
+    subscription: null,
+    plan: null,
+    usage: null,
+    limits: null,
+    featureAccess: null,
+    effectiveStatus: "missing",
+    isActive: false,
+    isTrialActive: false,
+    isExpired: true,
+    isInGracePeriod: false,
+    daysRemaining: null,
+    warnings: [],
+  },
+  limitChecks: [],
 };
 
 export default async function SubscriptionPage() {

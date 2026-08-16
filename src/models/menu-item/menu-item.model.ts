@@ -121,6 +121,46 @@ const menuItemSchema = new Schema(
       type: [String],
       default: [],
     },
+    /** Reusable guest customization groups (variants / add-ons) */
+    customizationGroups: {
+      type: [
+        new Schema(
+          {
+            id: { type: String, required: true, trim: true, maxlength: 64 },
+            name: { type: String, required: true, trim: true, maxlength: 80 },
+            required: { type: Boolean, default: false },
+            min: { type: Number, default: 0, min: 0, max: 20 },
+            max: { type: Number, default: 1, min: 0, max: 20 },
+            options: {
+              type: [
+                new Schema(
+                  {
+                    id: {
+                      type: String,
+                      required: true,
+                      trim: true,
+                      maxlength: 64,
+                    },
+                    name: {
+                      type: String,
+                      required: true,
+                      trim: true,
+                      maxlength: 80,
+                    },
+                    priceDelta: { type: Number, default: 0 },
+                    isAvailable: { type: Boolean, default: true },
+                  },
+                  { _id: false }
+                ),
+              ],
+              default: [],
+            },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   }),
   {
     ...baseSchemaOptions,

@@ -13,9 +13,10 @@ export function subscriptionSuccess<T>(
 export function subscriptionFailure(
   code: SubscriptionActionErrorCode,
   message: string,
-  fieldErrors?: Record<string, string[]>
+  fieldErrors?: Record<string, string[]>,
+  details?: SubscriptionActionError["details"]
 ): SubscriptionActionResult<never> {
-  const error: SubscriptionActionError = { code, message, fieldErrors };
+  const error: SubscriptionActionError = { code, message, fieldErrors, details };
   return { success: false, error };
 }
 

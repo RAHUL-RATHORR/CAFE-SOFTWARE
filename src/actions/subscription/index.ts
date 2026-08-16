@@ -17,6 +17,7 @@ import {
   createPlanSchema,
   deletePlanSchema,
   renewSubscriptionSchema,
+  reverseCancellationSchema,
   searchPlansSchema,
   updatePlanSchema,
 } from "@/lib/validators/subscription";
@@ -64,6 +65,23 @@ function mapDbError(error: unknown): SubscriptionActionResult<never> {
     return subscriptionFailure(
       "NO_SUBSCRIPTION",
       "No subscription found for this restaurant."
+    );
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: string }).code === "DOWNGRADE_EXCEEDS_LIMITS"
+  ) {
+    const details =
+      "details" in error
+        ? (error as { details?: Record<string, unknown> }).details
+        : undefined;
+    return subscriptionFailure(
+      "DOWNGRADE_EXCEEDS_LIMITS",
+      "Your current usage exceeds the limits of this plan.",
+      undefined,
+      details
     );
   }
   if (isDatabaseError(error)) {
@@ -264,6 +282,8 @@ export async function upgradePlan(
       billingCycle: parsed.data.billingCycle,
       mode: "upgrade",
       userId: actor.data.userId,
+      acknowledgeDowngradeLimits: parsed.data.acknowledgeDowngradeLimits,
+      scheduleAtPeriodEnd: parsed.data.scheduleAtPeriodEnd,
     });
     revalidateSubscriptionPaths();
     return subscriptionSuccess(subscription);
@@ -297,6 +317,8 @@ export async function downgradePlan(
       billingCycle: parsed.data.billingCycle,
       mode: "downgrade",
       userId: actor.data.userId,
+      acknowledgeDowngradeLimits: parsed.data.acknowledgeDowngradeLimits,
+      scheduleAtPeriodEnd: parsed.data.scheduleAtPeriodEnd,
     });
     revalidateSubscriptionPaths();
     return subscriptionSuccess(subscription);
@@ -325,6 +347,38 @@ export async function cancelSubscription(
 
   try {
     const subscription = await subscriptionRepository.cancelSubscription({
+      restaurantId: actor.data.restaurantId,
+      userId: actor.data.userId,
+      cancelAtPeriodEnd: parsed.data.cancelAtPeriodEnd,
+      reason: parsed.data.reason,
+    });
+    revalidateSubscriptionPaths();
+    return subscriptionSuccess(subscription);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+export async function reverseCancellation(
+  input: unknown = {}
+): Promise<SubscriptionActionResult<RestaurantSubscription>> {
+  const actor = await resolveSubscriptionActor([
+    "subscription.manage",
+    "subscription.update",
+  ]);
+  if (!actor.success) return actor;
+
+  const parsed = reverseCancellationSchema.safeParse(input ?? {});
+  if (!parsed.success) {
+    return subscriptionFailure(
+      "VALIDATION_ERROR",
+      "Invalid request.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  try {
+    const subscription = await subscriptionRepository.reverseCancellation({
       restaurantId: actor.data.restaurantId,
       userId: actor.data.userId,
     });
@@ -386,7 +440,11 @@ export async function getUsage(): Promise<
       subscriptionRepository.getDashboard(actor.data.restaurantId),
     ]);
     const limits = planToLimits(dashboard.currentPlan);
-    const checks = evaluateTenantLimits({ limits, usage });
+    const checks = evaluateTenantLimits({
+      limits,
+      usage,
+      tablesUsed: usage.tables,
+    });
     return subscriptionSuccess({ usage, limits, checks });
   } catch (error) {
     return mapDbError(error);

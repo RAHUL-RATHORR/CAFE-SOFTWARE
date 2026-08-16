@@ -20,6 +20,7 @@ export async function resolvePublicRestaurant(
 
   const doc = await RestaurantModel.findOne(filter).lean();
   if (!doc) return null;
+  if (doc.isActive === false) return null;
 
   return {
     id: String(doc._id),

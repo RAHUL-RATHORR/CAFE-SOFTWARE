@@ -23,6 +23,13 @@ export const RESTAURANT_TABLE_SHAPES = [
 
 export type RestaurantTableShape = (typeof RESTAURANT_TABLE_SHAPES)[number];
 
+export type RestaurantTableQrSummary = {
+  id: string;
+  token: string;
+  publicUrl: string;
+  isActive: boolean;
+};
+
 export type RestaurantTable = {
   id: string;
   restaurantId: string;
@@ -39,6 +46,8 @@ export type RestaurantTable = {
   notes: string;
   isActive: boolean;
   displayOrder: number;
+  /** Active opaque table QR when available */
+  qr?: RestaurantTableQrSummary | null;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
@@ -59,15 +68,40 @@ export type RestaurantTableSortField =
   | "createdAt"
   | "isActive";
 
+export type BulkTablePreviewItem = {
+  tableNumber: string;
+  tableName: string;
+  capacity: number;
+  status: "creatable" | "skipped" | "conflict";
+  reason?: string;
+};
+
+export type BulkTablePreviewResult = {
+  branchId: string;
+  creatable: BulkTablePreviewItem[];
+  skipped: BulkTablePreviewItem[];
+  conflicting: BulkTablePreviewItem[];
+  requestedCount: number;
+};
+
+export type BulkTableCreateResult = {
+  created: RestaurantTable[];
+  skipped: BulkTablePreviewItem[];
+  conflicting: BulkTablePreviewItem[];
+};
+
 export type RestaurantTableActionErrorCode =
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
   | "DUPLICATE_TABLE_NUMBER"
+  | "BRANCH_INACTIVE"
+  | "QR_FEATURE_UNAVAILABLE"
   | "DATABASE_ERROR"
   | "UNEXPECTED_ERROR"
-  | "NO_RESTAURANT";
+  | "NO_RESTAURANT"
+  | "PLAN_LIMIT_REACHED";
 
 export type RestaurantTableActionError = {
   code: RestaurantTableActionErrorCode;

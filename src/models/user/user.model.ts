@@ -27,11 +27,22 @@ const userSchema = new Schema(
       trim: true,
       lowercase: true,
     },
-    /** Password placeholder only — no hashing or auth in this module */
+    /** Password field — store hash */
     password: {
       type: String,
       default: "",
-      select: false,
+    },
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
+    resetPasswordToken: {
+      type: String,
+      default: null,
+    },
+    resetPasswordExpires: {
+      type: Date,
+      default: null,
     },
     phone: {
       type: String,

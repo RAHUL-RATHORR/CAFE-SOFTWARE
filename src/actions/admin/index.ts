@@ -331,6 +331,8 @@ export async function adminDowngradePlan(
       billingCycle: parsed.data.billingCycle,
       mode: "downgrade",
       userId: actor.data.userId,
+      acknowledgeDowngradeLimits: true,
+      scheduleAtPeriodEnd: true,
     });
     await adminRepository.writeAudit({
       category: "subscription",

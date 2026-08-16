@@ -207,26 +207,36 @@ export function AdminSubscriptionsView({
           </div>
         </AppCard>
 
-        <AppCard title="Usage overview" description="Tenant capacity snapshot">
+        <AppCard
+          title="Subscription overview"
+          description="Restaurant, plan, status, trial, and renewal foundations"
+        >
           <div className="overflow-x-auto rounded-xl border border-border/70">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="px-3 py-2">Restaurant</th>
-                  <th className="px-3 py-2">Users</th>
-                  <th className="px-3 py-2">Branches</th>
-                  <th className="px-3 py-2">Orders</th>
-                  <th className="px-3 py-2">Storage</th>
+                  <th className="px-3 py-2">Plan</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Usage</th>
                 </tr>
               </thead>
               <tbody>
                 {tenants.slice(0, 20).map((tenant) => (
                   <tr key={tenant.id} className="border-b border-border/50">
                     <td className="px-3 py-2 font-medium">{tenant.name}</td>
-                    <td className="px-3 py-2">{tenant.userCount}</td>
-                    <td className="px-3 py-2">{tenant.branchCount}</td>
-                    <td className="px-3 py-2">{tenant.orderCount}</td>
-                    <td className="px-3 py-2">{tenant.storageUsage} MB</td>
+                    <td className="px-3 py-2">
+                      {tenant.saasPlanName ?? tenant.subscriptionPlan}
+                    </td>
+                    <td className="px-3 py-2">
+                      <DsBadge variant="secondary" size="sm">
+                        {tenant.saasStatus ?? tenant.subscriptionStatus}
+                      </DsBadge>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {tenant.userCount} staff · {tenant.branchCount} branches ·{" "}
+                      {tenant.orderCount} orders
+                    </td>
                   </tr>
                 ))}
               </tbody>

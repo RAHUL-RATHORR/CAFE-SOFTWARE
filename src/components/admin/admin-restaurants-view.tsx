@@ -10,7 +10,8 @@ import { Pagination } from "@/components/tables/pagination";
 import { PageSizeSelector } from "@/components/tables/page-size-selector";
 import { TableEmptyState } from "@/components/tables/table-empty-state";
 import { DsBadge } from "@/components/badges/ds-badge";
-import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -25,7 +26,9 @@ import {
   TENANT_PLATFORM_STATUS_LABELS,
   TENANT_PLATFORM_STATUS_VARIANTS,
 } from "@/config/admin";
+import { RESTAURANT_SETUP_ROUTE } from "@/config/restaurant-setup";
 import { formatAdminDate } from "@/lib/admin";
+import { cn } from "@/lib/utils";
 import { toast } from "@/store/toast-store";
 import type { AdminTenantSummary } from "@/types/admin";
 import type { PaginationMeta } from "@/types/database";
@@ -103,6 +106,15 @@ export function AdminRestaurantsView({
     <AdminShell
       title="Restaurants"
       description="Tenant directory, lifecycle, and usage summary."
+      actions={
+        <Link
+          href={RESTAURANT_SETUP_ROUTE}
+          className={cn(buttonVariants({ size: "sm" }), "rounded-xl")}
+        >
+          <Plus data-icon="inline-start" />
+          Onboard Restaurant
+        </Link>
+      }
     >
       <AppCard title="Restaurant list" contentClassName="space-y-4">
         <TableToolbar

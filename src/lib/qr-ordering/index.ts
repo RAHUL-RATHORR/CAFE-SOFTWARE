@@ -13,3 +13,9 @@ export {
 } from "./serializers";
 
 export { resolvePublicRestaurant } from "./resolve-restaurant";
+export { resolveOrderingSession } from "./resolve-ordering-session";
+export {
+  unitPriceFromMenuItem,
+  validateAndPriceCustomizations,
+  computeGuestOrderTotals,
+} from "./pricing";

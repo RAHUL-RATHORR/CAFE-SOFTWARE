@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth/auth.config";
 import {
+  AUTH_ROUTES,
   DEFAULT_AUTHENTICATED_REDIRECT,
   DEFAULT_UNAUTHENTICATED_REDIRECT,
 } from "@/lib/auth/constants";
@@ -106,7 +107,7 @@ export default auth((request) => {
     }
   }
 
-  if (pathname.startsWith("/menu")) {
+  if (pathname.startsWith("/menu") || pathname.startsWith("/order")) {
     const limit = checkRateLimit("public", clientKey);
     if (!limit.allowed) {
       const denied = NextResponse.json(
@@ -120,10 +121,27 @@ export default auth((request) => {
     }
   }
 
-  // Future role guards:
-  // if (protection.kind === "admin" && request.auth?.user?.role !== "super-admin") ...
-  // if (protection.kind === "restaurant" && !request.auth?.user?.restaurantId) ...
-  void protection;
+  if (isLoggedIn && request.auth?.user?.mustChangePassword) {
+    if (pathname !== "/first-login" && !pathname.startsWith("/api/auth")) {
+      return finalize(
+        NextResponse.redirect(new URL("/first-login", request.nextUrl))
+      );
+    }
+  }
+
+  if (isLoggedIn) {
+    if (protection.kind === "admin" && request.auth?.user?.role !== "super-admin") {
+      const forbiddenUrl = new URL(DEFAULT_AUTHENTICATED_REDIRECT, request.nextUrl);
+      forbiddenUrl.searchParams.set("error", "forbidden");
+      return finalize(NextResponse.redirect(forbiddenUrl));
+    }
+
+    if (protection.kind === "restaurant" && !request.auth?.user?.restaurantId && request.auth?.user?.role !== "super-admin") {
+      const forbiddenUrl = new URL(AUTH_ROUTES.login, request.nextUrl);
+      forbiddenUrl.searchParams.set("error", "forbidden");
+      return finalize(NextResponse.redirect(forbiddenUrl));
+    }
+  }
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(productionConfig.tracing.headerName, trace.requestId);

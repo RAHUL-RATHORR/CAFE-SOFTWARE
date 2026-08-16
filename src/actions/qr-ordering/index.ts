@@ -7,6 +7,7 @@ import {
   qrSuccess,
   zodFieldErrors,
 } from "@/lib/qr-ordering";
+import { checkRateLimit } from "@/lib/rate-limit";
 import {
   createGuestOrderSchema,
   publicMenuQuerySchema,
@@ -17,13 +18,25 @@ import type { Category } from "@/types/category";
 import type { MenuItem } from "@/types/menu-item";
 import type {
   CustomerProfilePlaceholder,
+  GuestOrderConfirmation,
   PublicMenuPayload,
+  PublicOrderingPayload,
   PublicOrderTrackPayload,
   QrOrderingActionResult,
 } from "@/types/qr-ordering";
 import type { RestaurantOrder } from "@/types/order";
 import type { PublicOrderPlaceholderRecord } from "@/types/qr-ordering";
 import type { CustomerSessionRecord } from "@/types/qr-ordering";
+import { headers } from "next/headers";
+
+async function publicClientKey() {
+  const h = await headers();
+  return (
+    h.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    h.get("x-real-ip") ||
+    "anonymous"
+  );
+}
 
 export async function getPublicMenu(
   restaurant: string,
@@ -75,6 +88,24 @@ export async function getPublicMenu(
     return qrSuccess(data);
   } catch {
     return qrFailure("DATABASE_ERROR", "Unable to load menu.");
+  }
+}
+
+export async function getOrderingMenuByToken(
+  tableToken: string
+): Promise<QrOrderingActionResult<PublicOrderingPayload>> {
+  if (!tableToken?.trim()) {
+    return qrFailure("QR_INVALID", "QR Code Invalid");
+  }
+
+  try {
+    const data = await qrOrderingRepository.getOrderingMenu(tableToken.trim());
+    if (!data) {
+      return qrFailure("QR_INVALID", "Unable to open this table QR.");
+    }
+    return qrSuccess(data);
+  } catch {
+    return qrFailure("DATABASE_ERROR", "Unable to load ordering menu.");
   }
 }
 
@@ -153,8 +184,14 @@ export async function createGuestOrder(
     order: RestaurantOrder;
     trackingToken: string;
     session: CustomerSessionRecord;
+    confirmation: GuestOrderConfirmation;
   }>
 > {
+  const limit = checkRateLimit("serverActions", await publicClientKey());
+  if (!limit.allowed) {
+    return qrFailure("FORBIDDEN", "Too many requests. Please wait a moment.");
+  }
+
   const parsed = createGuestOrderSchema.safeParse(input);
   if (!parsed.success) {
     return qrFailure(
@@ -173,10 +210,44 @@ export async function createGuestOrder(
     return qrSuccess(data);
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message === "RESTAURANT_NOT_FOUND") {
+      const message = error.message;
+      if (message === "INVALID" || message === "REVOKED") {
+        return qrFailure("QR_INVALID", "This QR Code is no longer active.");
+      }
+      if (message === "TABLE_UNAVAILABLE") {
+        return qrFailure("TABLE_UNAVAILABLE", "Table Currently Unavailable");
+      }
+      if (message === "BRANCH_UNAVAILABLE") {
+        return qrFailure(
+          "BRANCH_UNAVAILABLE",
+          "This branch is currently unavailable."
+        );
+      }
+      if (message === "RESTAURANT_UNAVAILABLE") {
+        return qrFailure(
+          "RESTAURANT_NOT_FOUND",
+          "Restaurant is currently unavailable."
+        );
+      }
+      if (message === "ORDERING_UNAVAILABLE") {
+        return qrFailure(
+          "ORDERING_UNAVAILABLE",
+          "Online ordering is temporarily unavailable."
+        );
+      }
+      if (message === "ITEM_UNAVAILABLE") {
+        return qrFailure(
+          "ITEM_UNAVAILABLE",
+          "One or more items are unavailable."
+        );
+      }
+      if (message.startsWith("VALIDATION:")) {
+        return qrFailure("VALIDATION_ERROR", message.replace("VALIDATION:", ""));
+      }
+      if (message === "RESTAURANT_NOT_FOUND") {
         return qrFailure("RESTAURANT_NOT_FOUND", "Restaurant not found.");
       }
-      if (error.message === "TABLE_NOT_FOUND") {
+      if (message === "TABLE_NOT_FOUND") {
         return qrFailure("TABLE_NOT_FOUND", "Table not found.");
       }
     }
@@ -188,7 +259,7 @@ export async function trackOrder(
   restaurant: string,
   token: string
 ): Promise<QrOrderingActionResult<PublicOrderTrackPayload>> {
-  const parsed = trackOrderSchema.safeParse({ restaurant, token });
+  const parsed = trackOrderSchema.safeParse({ token });
   if (!parsed.success) {
     return qrFailure(
       "VALIDATION_ERROR",
@@ -198,10 +269,32 @@ export async function trackOrder(
   }
 
   try {
-    const data = await qrOrderingRepository.trackOrder(
-      parsed.data.restaurant,
-      parsed.data.token
+    const data = restaurant
+      ? await qrOrderingRepository.trackOrder(restaurant, parsed.data.token)
+      : await qrOrderingRepository.trackOrderByToken(parsed.data.token);
+    if (!data) {
+      return qrFailure("ORDER_NOT_FOUND", "Order not found.");
+    }
+    return qrSuccess(data);
+  } catch {
+    return qrFailure("DATABASE_ERROR", "Unable to track order.");
+  }
+}
+
+export async function trackOrderByPublicToken(
+  token: string
+): Promise<QrOrderingActionResult<PublicOrderTrackPayload>> {
+  const parsed = trackOrderSchema.safeParse({ token });
+  if (!parsed.success) {
+    return qrFailure(
+      "VALIDATION_ERROR",
+      "Invalid tracking request.",
+      zodFieldErrors(parsed.error.issues)
     );
+  }
+
+  try {
+    const data = await qrOrderingRepository.trackOrderByToken(parsed.data.token);
     if (!data) {
       return qrFailure("ORDER_NOT_FOUND", "Order not found.");
     }

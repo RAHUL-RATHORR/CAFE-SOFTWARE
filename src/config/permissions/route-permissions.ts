@@ -27,6 +27,12 @@ export const routePermissionBindings: RoutePermissionBinding[] = [
     permissions: ["tables.view"],
   },
   {
+    routeName: "branches",
+    path: "/branches",
+    permissions: ["branches.view", "branches.manage"],
+    mode: "any",
+  },
+  {
     routeName: "orders",
     path: "/orders",
     permissions: ["orders.view"],

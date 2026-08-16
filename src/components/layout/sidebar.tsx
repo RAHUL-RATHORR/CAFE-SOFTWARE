@@ -94,7 +94,7 @@ export function Sidebar({ variant = "desktop", onNavigate }: SidebarProps) {
     >
       <div
         className={cn(
-          "flex h-16 items-center gap-3 px-4",
+          "flex h-16 items-center gap-3 px-4 mt-4",
           collapsed && "justify-center px-2"
         )}
       >

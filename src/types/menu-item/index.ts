@@ -1,5 +1,21 @@
 import type { PaginationMeta } from "@/types/database";
 
+export type MenuItemCustomizationOption = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isAvailable: boolean;
+};
+
+export type MenuItemCustomizationGroup = {
+  id: string;
+  name: string;
+  required: boolean;
+  min: number;
+  max: number;
+  options: MenuItemCustomizationOption[];
+};
+
 export type MenuItem = {
   id: string;
   restaurantId: string;
@@ -23,6 +39,7 @@ export type MenuItem = {
   isFeatured: boolean;
   displayOrder: number;
   tags: string[];
+  customizationGroups: MenuItemCustomizationGroup[];
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;

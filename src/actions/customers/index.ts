@@ -17,6 +17,7 @@ import {
 } from "@/lib/validators/customer";
 import { customerRepository } from "@/repositories/customer";
 import { resolveCustomerActor } from "@/actions/customers/context";
+import { enforcePlanResourceLimit } from "@/lib/subscription/guards";
 import type {
   Customer,
   CustomerActionResult,
@@ -61,6 +62,14 @@ export async function createCustomer(
     "customers.manage",
   ]);
   if (!actor.success) return actor;
+
+  const limitGate = await enforcePlanResourceLimit({
+    restaurantId: actor.data.restaurantId,
+    key: "customers",
+  });
+  if (!limitGate.success) {
+    return customerFailure("FORBIDDEN", limitGate.error.message);
+  }
 
   const parsed = createCustomerSchema.safeParse(input);
   if (!parsed.success) {

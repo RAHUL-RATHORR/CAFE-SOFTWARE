@@ -38,6 +38,13 @@ export type OrderLineCreateData = {
   tax?: number;
   subtotal?: number;
   notes?: string;
+  customizations?: Array<{
+    groupId: string;
+    groupName: string;
+    optionId: string;
+    optionName: string;
+    priceDelta: number;
+  }>;
 };
 
 export type OrderCreateData = {
@@ -99,6 +106,13 @@ function mapLineItems(items: OrderLineCreateData[] | undefined) {
       tax: normalized.tax,
       subtotal: normalized.subtotal,
       notes: item.notes ?? "",
+      customizations: (item.customizations ?? []).map((row) => ({
+        groupId: row.groupId,
+        groupName: row.groupName,
+        optionId: row.optionId,
+        optionName: row.optionName,
+        priceDelta: row.priceDelta,
+      })),
     };
   });
 }

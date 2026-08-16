@@ -63,6 +63,9 @@ export function MenuItemForm({
     displayOrder: item?.displayOrder ?? 0,
     tags: ((item?.tags ?? []).join(", ") || "") as unknown as string[],
     branchId: item?.branchId ?? null,
+    customizationGroups: (item?.customizationGroups?.length
+      ? JSON.stringify(item.customizationGroups, null, 2)
+      : "") as unknown as CreateMenuItemInput["customizationGroups"],
   };
 
   function handleSubmit(values: FormValues) {
@@ -189,6 +192,14 @@ export function MenuItemForm({
             label="Tags"
             placeholder="spicy, breakfast, chef-special"
             description="Comma-separated tags"
+          />
+
+          <TextareaField
+            name="customizationGroups"
+            label="Customization groups (JSON)"
+            placeholder='[{"id":"size","name":"Size","required":true,"min":1,"max":1,"options":[{"id":"reg","name":"Regular","priceDelta":0,"isAvailable":true}]}]'
+            description="Optional add-ons / variants for QR ordering. Leave empty for none."
+            rows={4}
           />
 
           <ImageUploadPlaceholder

@@ -12,13 +12,16 @@ import {
   buildDefaultQrPlaceholder,
   serializeRestaurantTable,
 } from "@/lib/restaurant-tables";
+import { buildPublicTableQrUrl } from "@/lib/qr-code";
 import {
   RestaurantTableModel,
   type RestaurantTableDocument,
 } from "@/models/restaurant-table";
+import { QrCodeModel } from "@/models/qr-ordering";
 import type {
   RestaurantTable,
   RestaurantTableListResult,
+  RestaurantTableQrSummary,
   RestaurantTableSortField,
   RestaurantTableStatus,
 } from "@/types/restaurant-table";
@@ -60,6 +63,43 @@ function asDocument(
   return doc ?? null;
 }
 
+async function attachActiveQr(
+  restaurantId: string,
+  tables: RestaurantTable[]
+): Promise<RestaurantTable[]> {
+  if (tables.length === 0) return tables;
+  const ids = tables
+    .map((table) => table.id)
+    .filter((id) => isValidObjectId(id));
+  if (ids.length === 0) return tables;
+
+  const docs = await QrCodeModel.find(
+    notDeletedFilter({
+      restaurantId: toObjectId(restaurantId),
+      type: "table",
+      isActive: true,
+      tableId: { $in: ids.map((id) => toObjectId(id)) },
+    }) as TableFilter
+  ).exec();
+
+  const byTable = new Map<string, RestaurantTableQrSummary>();
+  for (const doc of docs) {
+    const tableId = doc.tableId ? String(doc.tableId) : "";
+    if (!tableId) continue;
+    byTable.set(tableId, {
+      id: String(doc._id),
+      token: doc.token,
+      publicUrl: buildPublicTableQrUrl(doc.token),
+      isActive: Boolean(doc.isActive),
+    });
+  }
+
+  return tables.map((table) => ({
+    ...table,
+    qr: byTable.get(table.id) ?? null,
+  }));
+}
+
 function buildSearchFilter(
   restaurantId: string,
   input: SearchRestaurantTableInput
@@ -74,6 +114,10 @@ function buildSearchFilter(
 
   if (input.floorId && isValidObjectId(input.floorId)) {
     filter.floorId = toObjectId(input.floorId);
+  }
+
+  if (input.branchId && isValidObjectId(input.branchId)) {
+    filter.branchId = toObjectId(input.branchId);
   }
 
   if (input.active === "active") filter.isActive = true;
@@ -139,9 +183,54 @@ export const restaurantTableRepository = {
         updatedBy: actorObjectId(data.createdBy),
       });
 
-      return serializeRestaurantTable(doc);
+      const table = serializeRestaurantTable(doc);
+      const [withQr] = await attachActiveQr(data.restaurantId, [table]);
+      return withQr;
     } catch (error) {
       throw handleDatabaseError(error, "Failed to create table");
+    }
+  },
+
+  async createMany(
+    rows: RestaurantTableCreateData[]
+  ): Promise<RestaurantTable[]> {
+    await connectToDatabase();
+    if (rows.length === 0) return [];
+    try {
+      const docs = await RestaurantTableModel.insertMany(
+        rows.map((data) => ({
+          restaurantId: toObjectId(data.restaurantId),
+          branchId:
+            data.branchId && isValidObjectId(data.branchId)
+              ? toObjectId(data.branchId)
+              : null,
+          floorId:
+            data.floorId && isValidObjectId(data.floorId)
+              ? toObjectId(data.floorId)
+              : null,
+          tableNumber: data.tableNumber.trim(),
+          tableName: data.tableName,
+          capacity: data.capacity,
+          shape: data.shape ?? "square",
+          status: data.status ?? "available",
+          location: data.location ?? "",
+          qrCodePlaceholder:
+            data.qrCodePlaceholder?.trim() ||
+            buildDefaultQrPlaceholder(data.restaurantId, data.tableNumber),
+          notes: data.notes ?? "",
+          isActive: data.isActive ?? true,
+          displayOrder: data.displayOrder ?? 0,
+          createdBy: actorObjectId(data.createdBy),
+          updatedBy: actorObjectId(data.createdBy),
+        })),
+        { ordered: false }
+      );
+      const tables = docs.map((doc) =>
+        serializeRestaurantTable(doc as RestaurantTableDocument)
+      );
+      return attachActiveQr(rows[0].restaurantId, tables);
+    } catch (error) {
+      throw handleDatabaseError(error, "Failed to create tables");
     }
   },
 
@@ -194,7 +283,11 @@ export const restaurantTableRepository = {
       ).exec();
 
       const resolved = asDocument(doc as RestaurantTableDocument | null);
-      return resolved ? serializeRestaurantTable(resolved) : null;
+      if (!resolved) return null;
+      const [withQr] = await attachActiveQr(restaurantId, [
+        serializeRestaurantTable(resolved),
+      ]);
+      return withQr;
     } catch (error) {
       throw handleDatabaseError(error, "Failed to update table");
     }
@@ -246,7 +339,11 @@ export const restaurantTableRepository = {
           restaurantId: toObjectId(restaurantId),
         }) as TableFilter
       ).exec();
-      return doc ? serializeRestaurantTable(doc) : null;
+      if (!doc) return null;
+      const [withQr] = await attachActiveQr(restaurantId, [
+        serializeRestaurantTable(doc),
+      ]);
+      return withQr;
     } catch (error) {
       throw handleDatabaseError(error, "Failed to load table");
     }
@@ -255,7 +352,8 @@ export const restaurantTableRepository = {
   async findByTableNumber(
     tableNumber: string,
     restaurantId: string,
-    excludeId?: string
+    excludeId?: string,
+    branchId?: string | null
   ): Promise<RestaurantTable | null> {
     await connectToDatabase();
     try {
@@ -263,6 +361,11 @@ export const restaurantTableRepository = {
         restaurantId: toObjectId(restaurantId),
         tableNumber: tableNumber.trim(),
       });
+      if (branchId === null) {
+        filter.branchId = null;
+      } else if (branchId && isValidObjectId(branchId)) {
+        filter.branchId = toObjectId(branchId);
+      }
       if (excludeId && isValidObjectId(excludeId)) {
         filter._id = { $ne: toObjectId(excludeId) };
       }
@@ -271,6 +374,29 @@ export const restaurantTableRepository = {
     } catch (error) {
       throw handleDatabaseError(error, "Failed to check table number");
     }
+  },
+
+  async findExistingNumbers(
+    restaurantId: string,
+    branchId: string,
+    tableNumbers: string[]
+  ): Promise<Set<string>> {
+    await connectToDatabase();
+    const normalized = tableNumbers
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (normalized.length === 0) return new Set();
+    const docs = await RestaurantTableModel.find(
+      notDeletedFilter({
+        restaurantId: toObjectId(restaurantId),
+        branchId: toObjectId(branchId),
+        tableNumber: { $in: normalized },
+      }) as TableFilter
+    )
+      .select("tableNumber")
+      .lean()
+      .exec();
+    return new Set(docs.map((doc) => String(doc.tableNumber)));
   },
 
   async findMany(
@@ -300,13 +426,14 @@ export const restaurantTableRepository = {
           .exec(),
       ]);
 
+      const items = await attachActiveQr(
+        restaurantId,
+        docs.map(serializeRestaurantTable)
+      );
+
       return {
-        items: docs.map(serializeRestaurantTable),
-        meta: buildPaginationMeta(
-          total,
-          pagination.page,
-          pagination.pageSize
-        ),
+        items,
+        meta: buildPaginationMeta(total, pagination.page, pagination.pageSize),
       };
     } catch (error) {
       throw handleDatabaseError(error, "Failed to list tables");

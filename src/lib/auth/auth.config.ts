@@ -43,6 +43,7 @@ export const authConfig = {
         token.role = user.role;
         token.restaurantId = user.restaurantId ?? null;
         token.rememberMe = Boolean(user.rememberMe);
+        token.mustChangePassword = Boolean(user.mustChangePassword);
 
         const maxAge = token.rememberMe
           ? SESSION_MAX_AGE_REMEMBER
@@ -72,6 +73,7 @@ export const authConfig = {
           (token.role as typeof session.user.role) ?? "manager";
         session.user.restaurantId =
           (token.restaurantId as string | null | undefined) ?? null;
+        session.user.mustChangePassword = Boolean(token.mustChangePassword);
       }
       session.rememberMe = Boolean(token.rememberMe);
       return session;

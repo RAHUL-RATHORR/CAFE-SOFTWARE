@@ -19,6 +19,11 @@ import {
   toLegacySubscriptionStatus,
   planToLimits,
   daysRemaining,
+  evaluateDowngradeImpact,
+  getPaymentProvider,
+  buildAccessSnapshot,
+  evaluateTenantLimits,
+  getSubscriptionPeriodEnd,
 } from "@/lib/subscription";
 import { DEFAULT_PLAN_SEEDS } from "@/config/subscription";
 import {
@@ -123,12 +128,49 @@ export const subscriptionRepository = {
     const count = await SubscriptionPlanModel.countDocuments(
       notDeletedFilter({})
     );
-    if (count > 0) return;
+    if (count > 0) {
+      // Best-effort backfill for renamed catalog slugs without deleting custom plans.
+      for (const seed of DEFAULT_PLAN_SEEDS) {
+        await SubscriptionPlanModel.updateOne(
+          notDeletedFilter({
+            $or: [{ slug: seed.slug }, { planKey: seed.planKey }],
+          }) as Filter,
+          {
+            $set: {
+              planKey: seed.planKey,
+              displayName: seed.displayName,
+              maxStaff: seed.maxStaff,
+              maxCustomers: seed.maxCustomers,
+            },
+          }
+        ).exec();
+      }
+      return;
+    }
 
     await SubscriptionPlanModel.insertMany(
       DEFAULT_PLAN_SEEDS.map((seed) => ({
-        ...seed,
+        planKey: seed.planKey,
+        name: seed.name,
+        displayName: seed.displayName,
+        slug: seed.slug,
+        description: seed.description,
+        monthlyPrice: seed.monthlyPrice,
+        yearlyPrice: seed.yearlyPrice,
+        currency: seed.currency,
+        trialDays: seed.trialDays,
+        maxBranches: seed.maxBranches,
+        maxStaff: seed.maxStaff,
+        maxUsers: seed.maxUsers,
+        maxOrdersPerMonth: seed.maxOrdersPerMonth,
+        maxMenuItems: seed.maxMenuItems,
+        maxTables: seed.maxTables,
+        maxCustomers: seed.maxCustomers,
+        storageLimit: seed.storageLimit,
         features: [...seed.features],
+        isPopular: seed.isPopular,
+        isActive: seed.isActive,
+        sortOrder: seed.sortOrder,
         createdBy: optionalRef(userId),
       }))
     );
@@ -198,7 +240,9 @@ export const subscriptionRepository = {
     }
 
     const doc = await SubscriptionPlanModel.create({
+      planKey: data.planKey ?? null,
       name: data.name,
+      displayName: data.displayName?.trim() || data.name,
       slug,
       description: data.description ?? "",
       monthlyPrice: data.monthlyPrice,
@@ -206,10 +250,12 @@ export const subscriptionRepository = {
       currency: data.currency,
       trialDays: data.trialDays,
       maxBranches: data.maxBranches,
-      maxUsers: data.maxUsers,
+      maxStaff: data.maxStaff ?? data.maxUsers,
+      maxUsers: data.maxUsers ?? data.maxStaff,
       maxOrdersPerMonth: data.maxOrdersPerMonth,
       maxMenuItems: data.maxMenuItems,
       maxTables: data.maxTables,
+      maxCustomers: data.maxCustomers ?? 0,
       storageLimit: data.storageLimit,
       features: data.features ?? [],
       isPopular: data.isPopular,
@@ -231,6 +277,8 @@ export const subscriptionRepository = {
       updatedBy: optionalRef(data.updatedBy),
     };
     if (data.name !== undefined) $set.name = data.name;
+    if (data.displayName !== undefined) $set.displayName = data.displayName;
+    if (data.planKey !== undefined) $set.planKey = data.planKey;
     if (data.slug !== undefined && data.slug !== "")
       $set.slug = data.slug.toLowerCase();
     if (data.description !== undefined) $set.description = data.description;
@@ -239,11 +287,19 @@ export const subscriptionRepository = {
     if (data.currency !== undefined) $set.currency = data.currency;
     if (data.trialDays !== undefined) $set.trialDays = data.trialDays;
     if (data.maxBranches !== undefined) $set.maxBranches = data.maxBranches;
+    if (data.maxStaff !== undefined) $set.maxStaff = data.maxStaff;
     if (data.maxUsers !== undefined) $set.maxUsers = data.maxUsers;
+    if (data.maxStaff !== undefined && data.maxUsers === undefined) {
+      $set.maxUsers = data.maxStaff;
+    }
+    if (data.maxUsers !== undefined && data.maxStaff === undefined) {
+      $set.maxStaff = data.maxUsers;
+    }
     if (data.maxOrdersPerMonth !== undefined)
       $set.maxOrdersPerMonth = data.maxOrdersPerMonth;
     if (data.maxMenuItems !== undefined) $set.maxMenuItems = data.maxMenuItems;
     if (data.maxTables !== undefined) $set.maxTables = data.maxTables;
+    if (data.maxCustomers !== undefined) $set.maxCustomers = data.maxCustomers;
     if (data.storageLimit !== undefined) $set.storageLimit = data.storageLimit;
     if (data.features !== undefined) $set.features = data.features;
     if (data.isPopular !== undefined) $set.isPopular = data.isPopular;
@@ -332,7 +388,7 @@ export const subscriptionRepository = {
     const trialStart = trialDays > 0 ? now : null;
     const trialEnd = trialDays > 0 ? addDays(now, trialDays) : null;
     const status: SaasSubscriptionStatus =
-      trialDays > 0 ? "trial" : "active";
+      trialDays > 0 ? "trialing" : "active";
     const subscriptionStart = trialDays > 0 ? null : now;
     const subscriptionEnd =
       trialDays > 0
@@ -340,7 +396,9 @@ export const subscriptionRepository = {
         : input.billingCycle === "yearly"
           ? addMonths(now, 12)
           : addMonths(now, 1);
-    const renewalDate = trialEnd ?? subscriptionEnd;
+    const currentPeriodStart = trialStart ?? subscriptionStart;
+    const currentPeriodEnd = trialEnd ?? subscriptionEnd;
+    const renewalDate = currentPeriodEnd;
 
     const existing = await RestaurantSubscriptionModel.findOne(
       notDeletedFilter({ restaurantId: toObjectId(input.restaurantId) }) as Filter
@@ -358,6 +416,14 @@ export const subscriptionRepository = {
       existing.trialEnd = trialEnd;
       existing.subscriptionStart = subscriptionStart;
       existing.subscriptionEnd = subscriptionEnd;
+      (existing as { currentPeriodStart?: Date | null }).currentPeriodStart =
+        currentPeriodStart;
+      (existing as { currentPeriodEnd?: Date | null }).currentPeriodEnd =
+        currentPeriodEnd;
+      (existing as { gracePeriodEnd?: Date | null }).gracePeriodEnd = null;
+      (existing as { cancelAtPeriodEnd?: boolean }).cancelAtPeriodEnd = false;
+      (existing as { pendingPlanChange?: unknown }).pendingPlanChange = null;
+      (existing as { paymentStatus?: string }).paymentStatus = "not_configured";
       existing.renewalDate = renewalDate;
       existing.cancelledAt = null;
       existing.licenseKey = licenseKey;
@@ -373,8 +439,14 @@ export const subscriptionRepository = {
         trialEnd,
         subscriptionStart,
         subscriptionEnd,
+        currentPeriodStart,
+        currentPeriodEnd,
+        gracePeriodEnd: null,
         renewalDate,
         cancelledAt: null,
+        cancelAtPeriodEnd: false,
+        pendingPlanChange: null,
+        paymentStatus: "not_configured",
         licenseKey,
         createdBy: optionalRef(input.userId),
       });
@@ -404,6 +476,8 @@ export const subscriptionRepository = {
     billingCycle?: BillingCycle;
     mode: "upgrade" | "downgrade";
     userId?: string | null;
+    acknowledgeDowngradeLimits?: boolean;
+    scheduleAtPeriodEnd?: boolean;
   }): Promise<RestaurantSubscription> {
     const current = await this.getSubscription(input.restaurantId);
     if (!current) {
@@ -417,16 +491,69 @@ export const subscriptionRepository = {
       throw Object.assign(new Error("NOT_FOUND"), { code: "NOT_FOUND" });
     }
 
-    const currentPlan = await this.findPlanById(current.planId);
-    if (currentPlan) {
-      const goingUp = nextPlan.monthlyPrice > currentPlan.monthlyPrice;
-      if (input.mode === "upgrade" && !goingUp && nextPlan.id !== currentPlan.id) {
-        // Allow same-price lateral moves; still apply as upgrade foundation
+    const usage = await this.getUsage(input.restaurantId);
+    const impact = evaluateDowngradeImpact({
+      currentUsage: usage,
+      targetPlan: nextPlan,
+    });
+    const exceeds = impact.filter((item) => item.exceeds);
+
+    if (input.mode === "downgrade" && exceeds.length > 0) {
+      if (!input.acknowledgeDowngradeLimits) {
+        throw Object.assign(new Error("DOWNGRADE_EXCEEDS_LIMITS"), {
+          code: "DOWNGRADE_EXCEEDS_LIMITS",
+          details: {
+            message:
+              "Your current usage exceeds the limits of this plan.",
+            affected: exceeds,
+          },
+        });
       }
-      if (input.mode === "downgrade" && goingUp) {
-        // Soft validation only — still allow foundation call
+
+      const scheduleAt =
+        input.scheduleAtPeriodEnd !== false
+          ? current.currentPeriodEnd ??
+            current.subscriptionEnd ??
+            current.renewalDate
+          : null;
+
+      const doc = await RestaurantSubscriptionModel.findOneAndUpdate(
+        notDeletedFilter({
+          restaurantId: toObjectId(input.restaurantId),
+        }) as Filter,
+        {
+          $set: {
+            pendingPlanChange: {
+              planId: toObjectId(input.planId),
+              mode: "downgrade",
+              billingCycle: input.billingCycle ?? current.billingCycle,
+              scheduledFor: scheduleAt ? new Date(scheduleAt) : null,
+              reason: "Scheduled because current usage exceeds target limits.",
+            },
+            updatedBy: optionalRef(input.userId),
+          },
+        },
+        { new: true }
+      ).exec();
+
+      if (!doc) {
+        throw Object.assign(new Error("NO_SUBSCRIPTION"), {
+          code: "NO_SUBSCRIPTION",
+        });
       }
+
+      const plan = await resolvePlanMeta(doc.planId);
+      return serializeSubscription(doc, plan);
     }
+
+    // Upgrades / safe downgrades: local plan assignment only.
+    // Payment provider remains not configured — no fake payment success.
+    const provider = getPaymentProvider();
+    await provider.changeSubscription({
+      providerSubscriptionId: current.providerSubscriptionId ?? "local",
+      planId: input.planId,
+      billingCycle: input.billingCycle ?? current.billingCycle,
+    });
 
     const cycle = input.billingCycle ?? current.billingCycle;
     const now = new Date();
@@ -444,8 +571,14 @@ export const subscriptionRepository = {
           status: "active" as SaasSubscriptionStatus,
           subscriptionStart: now,
           subscriptionEnd: end,
+          currentPeriodStart: now,
+          currentPeriodEnd: end,
           renewalDate: end,
           cancelledAt: null,
+          cancelAtPeriodEnd: false,
+          pendingPlanChange: null,
+          gracePeriodEnd: null,
+          paymentStatus: "not_configured",
           updatedBy: optionalRef(input.userId),
         },
       },
@@ -485,34 +618,112 @@ export const subscriptionRepository = {
   async cancelSubscription(input: {
     restaurantId: string;
     userId?: string | null;
+    cancelAtPeriodEnd?: boolean;
+    reason?: string;
   }): Promise<RestaurantSubscription> {
     await connectToDatabase();
+    const current = await this.getSubscription(input.restaurantId);
+    if (!current) {
+      throw Object.assign(new Error("NO_SUBSCRIPTION"), {
+        code: "NO_SUBSCRIPTION",
+      });
+    }
+
+    const cancelAtPeriodEnd = input.cancelAtPeriodEnd !== false;
+    const now = new Date();
+    const periodEnd =
+      current.currentPeriodEnd ??
+      current.subscriptionEnd ??
+      current.renewalDate ??
+      current.trialEnd;
+
     const doc = await RestaurantSubscriptionModel.findOneAndUpdate(
       notDeletedFilter({
         restaurantId: toObjectId(input.restaurantId),
       }) as Filter,
       {
-        $set: {
-          status: "cancelled",
-          cancelledAt: new Date(),
-          updatedBy: optionalRef(input.userId),
-        },
+        $set: cancelAtPeriodEnd
+          ? {
+              cancelAtPeriodEnd: true,
+              cancelledAt: now,
+              updatedBy: optionalRef(input.userId),
+            }
+          : {
+              status: "cancelled",
+              cancelAtPeriodEnd: false,
+              cancelledAt: now,
+              updatedBy: optionalRef(input.userId),
+            },
       },
       { new: true }
     ).exec();
+
     if (!doc) {
       throw Object.assign(new Error("NO_SUBSCRIPTION"), {
         code: "NO_SUBSCRIPTION",
       });
     }
+
+    if (current.providerSubscriptionId) {
+      await getPaymentProvider().cancelSubscription({
+        providerSubscriptionId: current.providerSubscriptionId,
+        atPeriodEnd: cancelAtPeriodEnd,
+      });
+    }
+
     const plan = await resolvePlanMeta(doc.planId);
-    if (plan) {
+    if (!cancelAtPeriodEnd && plan) {
       await syncRestaurantScaffold(
         input.restaurantId,
         plan.slug,
         "cancelled"
       );
     }
+
+    void periodEnd;
+    void input.reason;
+    return serializeSubscription(doc, plan);
+  },
+
+  async reverseCancellation(input: {
+    restaurantId: string;
+    userId?: string | null;
+  }): Promise<RestaurantSubscription> {
+    await connectToDatabase();
+    const current = await this.getSubscription(input.restaurantId);
+    if (!current) {
+      throw Object.assign(new Error("NO_SUBSCRIPTION"), {
+        code: "NO_SUBSCRIPTION",
+      });
+    }
+
+    if (!current.cancelAtPeriodEnd) {
+      return current;
+    }
+
+    const doc = await RestaurantSubscriptionModel.findOneAndUpdate(
+      notDeletedFilter({
+        restaurantId: toObjectId(input.restaurantId),
+      }) as Filter,
+      {
+        $set: {
+          cancelAtPeriodEnd: false,
+          cancelledAt: null,
+          status:
+            current.effectiveStatus === "trialing" ? "trialing" : "active",
+          updatedBy: optionalRef(input.userId),
+        },
+      },
+      { new: true }
+    ).exec();
+
+    if (!doc) {
+      throw Object.assign(new Error("NO_SUBSCRIPTION"), {
+        code: "NO_SUBSCRIPTION",
+      });
+    }
+
+    const plan = await resolvePlanMeta(doc.planId);
     return serializeSubscription(doc, plan);
   },
 
@@ -532,6 +743,15 @@ export const subscriptionRepository = {
       throw Object.assign(new Error("NOT_FOUND"), { code: "NOT_FOUND" });
     }
 
+    // Renewal without payment provider: extend local subscription state only.
+    // Do NOT mark payment as successful.
+    const providerResult = await getPaymentProvider().createSubscription({
+      restaurantId: input.restaurantId,
+      planId: current.planId,
+      billingCycle: input.billingCycle ?? current.billingCycle,
+    });
+    void providerResult;
+
     const cycle = input.billingCycle ?? current.billingCycle;
     const now = new Date();
     const end =
@@ -547,10 +767,16 @@ export const subscriptionRepository = {
           billingCycle: cycle,
           subscriptionStart: now,
           subscriptionEnd: end,
+          currentPeriodStart: now,
+          currentPeriodEnd: end,
           renewalDate: end,
           cancelledAt: null,
+          cancelAtPeriodEnd: false,
+          pendingPlanChange: null,
+          gracePeriodEnd: null,
           trialStart: null,
           trialEnd: null,
+          paymentStatus: "not_configured",
           updatedBy: optionalRef(input.userId),
         },
       },
@@ -574,7 +800,7 @@ export const subscriptionRepository = {
       periodStart: now,
       periodEnd: end,
       userId: input.userId,
-      status: "paid",
+      status: "open",
     });
 
     return serializeSubscription(doc, { name: plan.name, slug: plan.slug });
@@ -664,6 +890,7 @@ export const subscriptionRepository = {
       menuItems,
       customers,
       inventoryItems,
+      tables,
       existing,
     ] = await Promise.all([
       UserModel.countDocuments(tenant),
@@ -675,6 +902,7 @@ export const subscriptionRepository = {
       MenuItemModel.countDocuments(tenant),
       CustomerModel.countDocuments(tenant),
       IngredientModel.countDocuments(tenant),
+      RestaurantTableModel.countDocuments(tenant),
       UsageMetricsModel.findOne(
         notDeletedFilter({ restaurantId: rid, periodKey }) as Filter
       ).exec(),
@@ -687,6 +915,7 @@ export const subscriptionRepository = {
       menuItems,
       customers,
       inventoryItems,
+      tables,
       storage: existing?.storage ?? 0,
       apiRequests: existing?.apiRequests ?? 0,
     };
@@ -714,19 +943,14 @@ export const subscriptionRepository = {
     restaurantId: string
   ): Promise<SubscriptionDashboardSummary> {
     await this.ensureDefaultPlans();
-    const [subscription, plans, invoices, usage, featureAccess, tablesUsed] =
+    const [subscription, plans, invoices, usage, featureAccess] =
       await Promise.all([
         this.getSubscription(restaurantId),
         this.findPlans({ activeOnly: true }),
         this.listInvoices(restaurantId, 5),
         this.getUsage(restaurantId),
         this.getFeatureAccess(restaurantId),
-        RestaurantTableModel.countDocuments(
-          notDeletedFilter({ restaurantId: toObjectId(restaurantId) }) as Filter
-        ),
       ]);
-
-    void tablesUsed;
 
     const currentPlan = subscription
       ? (await this.findPlanById(subscription.planId)) ??
@@ -734,10 +958,17 @@ export const subscriptionRepository = {
         null
       : null;
 
-    const end =
-      subscription?.status === "trial"
-        ? subscription.trialEnd
-        : subscription?.subscriptionEnd ?? subscription?.renewalDate;
+    const limits = planToLimits(currentPlan);
+    const access = buildAccessSnapshot({
+      subscription,
+      plan: currentPlan,
+      usage,
+      limits,
+      featureAccess,
+    });
+    const periodEnd = subscription
+      ? getSubscriptionPeriodEnd(subscription)
+      : null;
 
     const higherPlans = currentPlan
       ? plans.filter((p) => p.monthlyPrice > currentPlan.monthlyPrice)
@@ -746,13 +977,19 @@ export const subscriptionRepository = {
     return {
       currentPlan,
       subscription,
-      daysRemaining: daysRemaining(end),
-      renewalDate: subscription?.renewalDate ?? null,
+      daysRemaining: daysRemaining(periodEnd),
+      renewalDate: subscription?.renewalDate ?? periodEnd,
       usage,
-      limits: planToLimits(currentPlan),
+      limits,
       featureAccess,
       recentInvoices: invoices,
       upgradeAvailable: higherPlans.length > 0,
+      access,
+      limitChecks: evaluateTenantLimits({
+        limits,
+        usage,
+        tablesUsed: usage.tables,
+      }),
     };
   },
 };

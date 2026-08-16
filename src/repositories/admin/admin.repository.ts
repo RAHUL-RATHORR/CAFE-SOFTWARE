@@ -630,7 +630,7 @@ export const adminRepository = {
         notDeletedFilter({ isActive: true }) as Filter
       ),
       RestaurantSubscriptionModel.countDocuments(
-        notDeletedFilter({ status: "trial" }) as Filter
+        notDeletedFilter({ status: { $in: ["trial", "trialing"] } }) as Filter
       ),
       RestaurantSubscriptionModel.countDocuments(
         notDeletedFilter({ status: { $in: ["expired", "cancelled"] } }) as Filter
@@ -909,8 +909,10 @@ export const adminRepository = {
     const base =
       sub.trialEnd && sub.trialEnd > new Date() ? sub.trialEnd : new Date();
     sub.trialEnd = addDays(base, input.days);
-    sub.status = "trial";
+    sub.status = "trialing";
     sub.renewalDate = sub.trialEnd;
+    (sub as { currentPeriodEnd?: Date | null }).currentPeriodEnd = sub.trialEnd;
+    (sub as { cancelAtPeriodEnd?: boolean }).cancelAtPeriodEnd = false;
     if (input.actorId) sub.updatedBy = toObjectId(input.actorId) as never;
     await sub.save();
 

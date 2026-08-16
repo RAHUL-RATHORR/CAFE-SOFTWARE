@@ -61,6 +61,21 @@ const orderLineItemSchema = new Schema(
       maxlength: 255,
       default: "",
     },
+    customizations: {
+      type: [
+        new Schema(
+          {
+            groupId: { type: String, trim: true, maxlength: 64, default: "" },
+            groupName: { type: String, trim: true, maxlength: 80, default: "" },
+            optionId: { type: String, trim: true, maxlength: 64, default: "" },
+            optionName: { type: String, trim: true, maxlength: 80, default: "" },
+            priceDelta: { type: Number, default: 0 },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   { _id: false }
 );
@@ -246,6 +261,10 @@ orderSchema.index({ restaurantId: 1, priority: 1, status: 1 });
 orderSchema.index({ restaurantId: 1, tableId: 1 });
 orderSchema.index({ restaurantId: 1, customerId: 1 });
 orderSchema.index({ restaurantId: 1, createdAt: -1 });
+orderSchema.index({ restaurantId: 1, tableId: 1, createdAt: -1 });
+orderSchema.index({ restaurantId: 1, branchId: 1, createdAt: -1 });
+orderSchema.index({ branchId: 1, createdAt: -1 });
+orderSchema.index({ tableId: 1, createdAt: -1 });
 
 export type OrderDocument = InferSchemaType<typeof orderSchema> & {
   _id: Schema.Types.ObjectId;

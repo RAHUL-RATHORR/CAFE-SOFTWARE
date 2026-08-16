@@ -26,6 +26,7 @@ const usageMetricsSchema = new Schema(
     menuItems: { type: Number, min: 0, default: 0 },
     customers: { type: Number, min: 0, default: 0 },
     inventoryItems: { type: Number, min: 0, default: 0 },
+    tables: { type: Number, min: 0, default: 0 },
   }),
   baseSchemaOptions
 );

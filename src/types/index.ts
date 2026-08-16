@@ -183,6 +183,29 @@ export type {
 export { ONBOARDING_STEP_IDS } from "./onboarding";
 
 export type {
+  RestaurantSetupStepId,
+  RestaurantSetupStepStatus,
+  RestaurantSetupFlowStatus,
+  RestaurantSetupStepDefinition,
+  RestaurantSetupDraft,
+  RestaurantSetupReviewSection,
+  RestaurantInformationSetupDraft,
+  LocationSetupDraft,
+  SubscriptionSetupDraft,
+  BranchSetupDraft,
+  TableSetupDraft,
+  SetupSubscriptionPlanId,
+  SetupSubscriptionPlanDefinition,
+  BranchSetupMode,
+} from "./restaurant-setup";
+
+export {
+  RESTAURANT_SETUP_STEP_IDS,
+  SETUP_SUBSCRIPTION_PLAN_IDS,
+  BRANCH_SETUP_MODES,
+} from "./restaurant-setup";
+
+export type {
   Branch,
   BranchStatus,
   BranchSettings,
@@ -194,6 +217,11 @@ export type {
   BranchSwitcherOption,
   BranchRolePlaceholder,
   BranchAccessPlaceholder,
+  BranchListResult,
+  BranchSortField,
+  BranchActionError,
+  BranchActionErrorCode,
+  BranchActionResult,
 } from "./branch";
 
 export { BRANCH_STATUSES } from "./branch";
@@ -223,6 +251,10 @@ export type {
   RestaurantTableShape,
   RestaurantTableListResult,
   RestaurantTableSortField,
+  RestaurantTableQrSummary,
+  BulkTablePreviewItem,
+  BulkTablePreviewResult,
+  BulkTableCreateResult,
   RestaurantTableActionError,
   RestaurantTableActionErrorCode,
   RestaurantTableActionResult,

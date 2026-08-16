@@ -43,6 +43,14 @@ export const ORDER_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 
 export type OrderPriority = (typeof ORDER_PRIORITIES)[number];
 
+export type OrderLineCustomization = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceDelta: number;
+};
+
 export type OrderLineItem = {
   menuItemId: string | null;
   name: string;
@@ -52,6 +60,7 @@ export type OrderLineItem = {
   tax: number;
   subtotal: number;
   notes: string;
+  customizations: OrderLineCustomization[];
 };
 
 export type OrderStatusHistoryEntry = {

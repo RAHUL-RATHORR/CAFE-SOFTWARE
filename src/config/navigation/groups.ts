@@ -16,7 +16,7 @@ export const navigationGroups: NavigationGroup[] = [
     id: "restaurant",
     label: "Restaurant",
     description: "Menu, categories, and floor",
-    routes: ["categories", "menu-items", "tables"],
+    routes: ["categories", "menu-items", "tables", "branches"],
     order: 20,
   },
   {

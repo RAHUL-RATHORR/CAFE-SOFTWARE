@@ -6,6 +6,7 @@ declare module "next-auth" {
     role: AppRole;
     restaurantId?: string | null;
     rememberMe?: boolean;
+    mustChangePassword?: boolean;
   }
 
   interface Session {
@@ -13,6 +14,7 @@ declare module "next-auth" {
       id: string;
       role: AppRole;
       restaurantId: string | null;
+      mustChangePassword?: boolean;
     } & DefaultSession["user"];
     rememberMe?: boolean;
   }
@@ -24,6 +26,7 @@ declare module "next-auth/jwt" {
     role?: AppRole;
     restaurantId?: string | null;
     rememberMe?: boolean;
+    mustChangePassword?: boolean;
     maxAge?: number;
   }
 }

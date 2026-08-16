@@ -49,6 +49,18 @@ export function buildPublicMenuPath(
   return `${path}?${params.toString()}`;
 }
 
+export function buildPublicOrderPath(
+  tableToken: string,
+  segment?: "cart" | "checkout" | "confirmation"
+) {
+  const base = `/order/${encodeURIComponent(tableToken)}`;
+  return segment ? `${base}/${segment}` : base;
+}
+
+export function buildPublicOrderStatusPath(publicOrderToken: string) {
+  return `/order/status/${encodeURIComponent(publicOrderToken)}`;
+}
+
 export function buildQrPlaceholderCode(input: {
   type: QrCodeType;
   restaurantId: string;

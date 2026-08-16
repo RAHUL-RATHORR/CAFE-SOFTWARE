@@ -1,6 +1,5 @@
 /**
  * Branch / outlet types for multi-branch restaurant support.
- * Architecture only — no CRUD or API binding.
  */
 
 export const BRANCH_STATUSES = [
@@ -85,7 +84,12 @@ export type Branch = {
   status: BranchStatus;
   openingHours?: BranchOpeningHours;
   coordinates?: BranchCoordinates;
+  gstin: string;
+  openingTime: string;
+  closingTime: string;
   isMainBranch: boolean;
+  /** Present on list views when aggregated */
+  tableCount?: number;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -98,6 +102,7 @@ export type BranchSummary = {
   status: BranchStatus;
   isMainBranch: boolean;
   restaurantId: string;
+  tableCount?: number;
 };
 
 export type BranchSwitcherOption = {
@@ -119,3 +124,38 @@ export type BranchAccessPlaceholder = {
   /** Future: permission keys scoped to this branch */
   permissions?: string[];
 };
+
+export type BranchListResult = {
+  items: Branch[];
+  meta: import("@/types/database").PaginationMeta;
+};
+
+export type BranchSortField =
+  | "name"
+  | "branchCode"
+  | "city"
+  | "status"
+  | "isMainBranch"
+  | "createdAt";
+
+export type BranchActionErrorCode =
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "VALIDATION_ERROR"
+  | "NOT_FOUND"
+  | "DUPLICATE_BRANCH_CODE"
+  | "DEFAULT_BRANCH_REQUIRED"
+  | "DATABASE_ERROR"
+  | "UNEXPECTED_ERROR"
+  | "NO_RESTAURANT"
+  | "PLAN_LIMIT_REACHED";
+
+export type BranchActionError = {
+  code: BranchActionErrorCode;
+  message: string;
+  fieldErrors?: Record<string, string[]>;
+};
+
+export type BranchActionResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: BranchActionError };

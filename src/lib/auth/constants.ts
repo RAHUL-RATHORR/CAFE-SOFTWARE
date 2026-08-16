@@ -20,9 +20,11 @@ export const GUEST_ROUTES: string[] = [
  */
 export const PROTECTED_ROUTE_PREFIXES: string[] = [
   "/dashboard",
+  "/first-login",
   "/categories",
   "/menu-items",
   "/tables",
+  "/branches",
   "/orders",
   "/kitchen",
   "/billing",
@@ -52,6 +54,7 @@ export const RESTAURANT_ROUTE_PREFIXES: string[] = [
   "/categories",
   "/menu-items",
   "/tables",
+  "/branches",
   "/orders",
   "/kitchen",
   "/billing",
@@ -65,7 +68,7 @@ export const RESTAURANT_ROUTE_PREFIXES: string[] = [
 ];
 
 /** Explicitly public paths (no session required) */
-export const PUBLIC_ROUTES: string[] = ["/menu", "/api/health"];
+export const PUBLIC_ROUTES: string[] = ["/menu", "/order", "/api/health"];
 
 export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   invalid_credentials: "Invalid email or password. Please try again.",

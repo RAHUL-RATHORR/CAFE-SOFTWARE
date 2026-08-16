@@ -4,7 +4,11 @@
 
 import type { Category } from "@/types/category";
 import type { MenuItem } from "@/types/menu-item";
-import type { RestaurantOrder, RestaurantOrderStatus } from "@/types/order";
+import type {
+  OrderLineCustomization,
+  RestaurantOrder,
+  RestaurantOrderStatus,
+} from "@/types/order";
 
 export const QR_CODE_TYPES = ["restaurant", "branch", "table"] as const;
 export type QrCodeType = (typeof QR_CODE_TYPES)[number];
@@ -38,6 +42,21 @@ export type PublicTableInfo = {
   status: string;
 };
 
+export type PublicBranchInfo = {
+  id: string | null;
+  name: string;
+};
+
+export type PublicOrderingPayload = {
+  tableToken: string;
+  restaurant: PublicRestaurantInfo;
+  branch: PublicBranchInfo;
+  table: PublicTableInfo;
+  categories: Category[];
+  featuredItems: MenuItem[];
+  items: MenuItem[];
+};
+
 export type PublicMenuPayload = {
   restaurant: PublicRestaurantInfo;
   table: PublicTableInfo | null;
@@ -47,31 +66,34 @@ export type PublicMenuPayload = {
   qr: {
     type: QrCodeType;
     code: string;
-    /** FUTURE PLACEHOLDER — dynamic QR payload */
     dynamicPayload: string;
-    /** FUTURE PLACEHOLDER — validation */
     validated: boolean;
-    /** FUTURE PLACEHOLDER — expiration */
     expired: boolean;
   };
+};
+
+export type GuestCartCustomization = {
+  groupId: string;
+  optionIds: string[];
 };
 
 export type GuestCartItem = {
   key: string;
   menuItemId: string | null;
   name: string;
+  /** Display-only; server recomputes authoritative price */
   price: number;
   quantity: number;
   notes: string;
   isVeg: boolean;
   image: string;
+  customizations: GuestCartCustomization[];
+  customizationRows?: OrderLineCustomization[];
 };
 
 export type GuestOrderSummary = {
   subtotal: number;
-  /** FUTURE PLACEHOLDER — tax calculation */
   tax: number;
-  /** FUTURE PLACEHOLDER — service charge */
   serviceCharge: number;
   grandTotal: number;
 };
@@ -85,7 +107,6 @@ export type QrCodeRecord = {
   code: string;
   token: string;
   isActive: boolean;
-  /** FUTURE PLACEHOLDER — expiration */
   expiresAt: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
@@ -101,7 +122,6 @@ export type CustomerSessionRecord = {
   guestName: string;
   guestPhone: string;
   guestEmail: string;
-  /** FUTURE PLACEHOLDER — cart snapshot sync */
   cartSnapshot: GuestCartItem[];
   expiresAt: string | null;
   createdAt: string;
@@ -118,7 +138,6 @@ export type PublicOrderPlaceholderRecord = {
   guestName: string;
   guestPhone: string;
   status: RestaurantOrderStatus;
-  /** FUTURE PLACEHOLDER — ETA minutes */
   estimatedMinutes: number | null;
   notes: string;
   createdAt: string;
@@ -134,13 +153,23 @@ export type PublicOrderTrackPayload = {
     completed: boolean;
     active: boolean;
   }>;
+  restaurantName?: string;
+  tableLabel?: string;
+};
+
+export type GuestOrderConfirmation = {
+  orderNumber: string;
+  trackingToken: string;
+  tableLabel: string;
+  grandTotal: number;
+  currency: string;
+  statusLabel: string;
 };
 
 export type CustomerProfilePlaceholder = {
   orderHistory: unknown[];
   favoriteItems: unknown[];
   savedPreferences: Record<string, unknown>;
-  /** FUTURE PLACEHOLDER — loyalty */
   loyaltyPoints: number;
 };
 
@@ -154,7 +183,14 @@ export type QrOrderingActionErrorCode =
   | "DATABASE_ERROR"
   | "UNEXPECTED_ERROR"
   | "QR_INVALID"
-  | "QR_EXPIRED";
+  | "QR_EXPIRED"
+  | "QR_REVOKED"
+  | "TABLE_UNAVAILABLE"
+  | "BRANCH_UNAVAILABLE"
+  | "ORDERING_UNAVAILABLE"
+  | "ITEM_UNAVAILABLE"
+  | "PRICE_MISMATCH"
+  | "FORBIDDEN";
 
 export type QrOrderingActionError = {
   code: QrOrderingActionErrorCode;

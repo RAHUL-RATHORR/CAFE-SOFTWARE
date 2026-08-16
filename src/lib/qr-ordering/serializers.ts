@@ -56,15 +56,33 @@ export function serializeCustomerSession(
     guestName: doc.guestName ?? "",
     guestPhone: doc.guestPhone ?? "",
     guestEmail: doc.guestEmail ?? "",
-    cartSnapshot: ((doc.cartSnapshot as GuestCartItem[]) ?? []).map((item) => ({
-      key: item.key,
+    cartSnapshot: (
+      (doc.cartSnapshot as unknown as Array<{
+        key?: string;
+        menuItemId?: string | null;
+        name?: string;
+        price?: number;
+        quantity?: number;
+        notes?: string;
+        isVeg?: boolean;
+        image?: string;
+        customizations?: GuestCartItem["customizations"];
+      }>) ?? []
+    ).map((item) => ({
+      key: item.key ?? "",
       menuItemId: item.menuItemId ?? null,
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity,
+      name: item.name ?? "",
+      price: Number(item.price ?? 0),
+      quantity: Number(item.quantity ?? 1),
       notes: item.notes ?? "",
       isVeg: item.isVeg ?? true,
       image: item.image ?? "",
+      customizations: Array.isArray(item.customizations)
+        ? item.customizations.map((row) => ({
+            groupId: row.groupId,
+            optionIds: [...(row.optionIds ?? [])],
+          }))
+        : [],
     })),
     expiresAt: toIso(doc.expiresAt),
     createdAt: toIso(doc.createdAt) ?? new Date().toISOString(),

@@ -69,6 +69,7 @@ export const searchRestaurantTableSchema = z.object({
     .enum(["all", ...RESTAURANT_TABLE_STATUSES])
     .default("all"),
   floorId: z.string().trim().optional().or(z.literal("")),
+  branchId: z.string().trim().optional().or(z.literal("")),
   minCapacity: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),
     z.coerce.number().int().min(1).optional()
@@ -94,6 +95,37 @@ export const searchRestaurantTableSchema = z.object({
   sortOrder: z.enum(["asc", "desc"]).default("asc"),
 });
 
+export const setRestaurantTableActiveSchema = z.object({
+  id: z.string().trim().min(1, "Table id is required"),
+  isActive: z.boolean(),
+});
+
+export const previewBulkTablesSchema = z.object({
+  branchId: z
+    .string()
+    .trim()
+    .regex(/^[a-f\d]{24}$/i, "Branch id is required"),
+  prefix: z
+    .string()
+    .trim()
+    .max(16)
+    .regex(/^[A-Za-z0-9-]*$/, "Use letters, numbers, and hyphens only")
+    .default("T"),
+  startNumber: z.coerce.number().int().min(1).max(9999).default(1),
+  count: z.coerce.number().int().min(1).max(100),
+  capacity: z.coerce.number().int().min(1).max(100).default(4),
+  namePrefix: z.string().trim().max(80).optional().or(z.literal("")),
+});
+
+export const confirmBulkTablesSchema = previewBulkTablesSchema.extend({
+  /** Only create numbers that were confirmed as creatable in the preview */
+  confirmedNumbers: z.array(z.string().trim().min(1)).min(1),
+});
+
+export const tableQrActionSchema = z.object({
+  tableId: z.string().trim().min(1, "Table id is required"),
+});
+
 export type CreateRestaurantTableInput = z.infer<
   typeof createRestaurantTableSchema
 >;
@@ -109,3 +141,9 @@ export type UpdateRestaurantTableStatusInput = z.infer<
 export type SearchRestaurantTableInput = z.infer<
   typeof searchRestaurantTableSchema
 >;
+export type SetRestaurantTableActiveInput = z.infer<
+  typeof setRestaurantTableActiveSchema
+>;
+export type PreviewBulkTablesInput = z.infer<typeof previewBulkTablesSchema>;
+export type ConfirmBulkTablesInput = z.infer<typeof confirmBulkTablesSchema>;
+export type TableQrActionInput = z.infer<typeof tableQrActionSchema>;

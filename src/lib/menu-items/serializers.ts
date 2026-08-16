@@ -43,6 +43,42 @@ export function serializeMenuItem(
     isFeatured: Boolean(doc.isFeatured),
     displayOrder: doc.displayOrder ?? 0,
     tags: Array.isArray(doc.tags) ? doc.tags.map(String) : [],
+    customizationGroups: Array.isArray(
+      (doc as MenuItemDocument & { customizationGroups?: unknown })
+        .customizationGroups
+    )
+      ? (
+          (
+            doc as MenuItemDocument & {
+              customizationGroups: Array<{
+                id?: string;
+                name?: string;
+                required?: boolean;
+                min?: number;
+                max?: number;
+                options?: Array<{
+                  id?: string;
+                  name?: string;
+                  priceDelta?: number;
+                  isAvailable?: boolean;
+                }>;
+              }>;
+            }
+          ).customizationGroups ?? []
+        ).map((group) => ({
+          id: String(group.id ?? ""),
+          name: String(group.name ?? ""),
+          required: Boolean(group.required),
+          min: Number(group.min ?? 0),
+          max: Number(group.max ?? 1),
+          options: (group.options ?? []).map((option) => ({
+            id: String(option.id ?? ""),
+            name: String(option.name ?? ""),
+            priceDelta: Number(option.priceDelta ?? 0),
+            isAvailable: option.isAvailable !== false,
+          })),
+        }))
+      : [],
     createdBy: idToString(doc.createdBy),
     updatedBy: idToString(doc.updatedBy),
     createdAt:

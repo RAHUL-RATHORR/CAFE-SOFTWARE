@@ -13,6 +13,7 @@ import { CategoryModel } from "@/models/category";
 import { MenuItemModel, type MenuItemDocument } from "@/models/menu-item";
 import type {
   MenuItem,
+  MenuItemCustomizationGroup,
   MenuItemListResult,
   MenuItemSortField,
 } from "@/types/menu-item";
@@ -39,6 +40,7 @@ export type MenuItemCreateData = {
   isFeatured?: boolean;
   displayOrder?: number;
   tags?: string[];
+  customizationGroups?: MenuItemCustomizationGroup[];
   createdBy?: string | null;
 };
 
@@ -180,6 +182,7 @@ export const menuItemRepository = {
         isFeatured: data.isFeatured ?? false,
         displayOrder: data.displayOrder ?? 0,
         tags: data.tags ?? [],
+        customizationGroups: data.customizationGroups ?? [],
         createdBy: actorObjectId(data.createdBy),
         updatedBy: actorObjectId(data.createdBy),
       });
@@ -231,6 +234,9 @@ export const menuItemRepository = {
       if (data.displayOrder !== undefined)
         update.displayOrder = data.displayOrder;
       if (data.tags !== undefined) update.tags = data.tags;
+      if (data.customizationGroups !== undefined) {
+        update.customizationGroups = data.customizationGroups;
+      }
       if (data.branchId !== undefined) {
         update.branchId =
           data.branchId && isValidObjectId(data.branchId)

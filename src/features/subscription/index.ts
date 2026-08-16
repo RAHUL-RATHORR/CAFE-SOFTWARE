@@ -7,6 +7,7 @@ export {
   upgradePlan,
   downgradePlan,
   cancelSubscription,
+  reverseCancellation,
   renewSubscription,
   getUsage,
   getSubscriptionDashboard,
@@ -44,6 +45,9 @@ export {
   SAAS_STATUS_LABELS,
   SAAS_FEATURE_LABELS,
   DEFAULT_PLAN_SEEDS,
+  SUBSCRIPTION_DEFAULTS,
+  PLAN_ID_TO_SLUG,
+  getPlanSeedById,
 } from "@/config/subscription";
 
 export type {
@@ -54,10 +58,12 @@ export type {
   FeatureAccess,
   SubscriptionDashboardSummary,
   SubscriptionActionResult,
+  PlanId,
 } from "@/types/subscription";
 
 export {
   SAAS_SUBSCRIPTION_STATUSES,
   SAAS_FEATURE_KEYS,
   BILLING_CYCLES,
+  PLAN_IDS,
 } from "@/types/subscription";

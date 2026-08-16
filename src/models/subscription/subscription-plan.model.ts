@@ -10,7 +10,16 @@ import { SAAS_FEATURE_KEYS } from "@/types/subscription";
 
 const subscriptionPlanSchema = new Schema(
   withBaseFields({
+    planKey: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: 40,
+      default: null,
+      index: true,
+    },
     name: { type: String, required: true, trim: true, maxlength: 120 },
+    displayName: { type: String, trim: true, maxlength: 120, default: "" },
     slug: {
       type: String,
       required: true,
@@ -29,14 +38,16 @@ const subscriptionPlanSchema = new Schema(
       trim: true,
       uppercase: true,
       maxlength: 3,
-      default: "USD",
+      default: "INR",
     },
     trialDays: { type: Number, min: 0, max: 365, default: 14 },
     maxBranches: { type: Number, min: 0, default: 1 },
+    maxStaff: { type: Number, min: 0, default: 3 },
     maxUsers: { type: Number, min: 0, default: 3 },
     maxOrdersPerMonth: { type: Number, min: 0, default: 200 },
     maxMenuItems: { type: Number, min: 0, default: 50 },
     maxTables: { type: Number, min: 0, default: 10 },
+    maxCustomers: { type: Number, min: 0, default: 100 },
     storageLimit: { type: Number, min: 0, default: 500 },
     features: {
       type: [String],

@@ -15,6 +15,7 @@ import {
   downgradePlan,
   cancelSubscription,
   renewSubscription,
+  reverseCancellation,
 } from "@/actions/subscription";
 import {
   SAAS_FEATURE_LABELS,
@@ -22,7 +23,8 @@ import {
   SAAS_STATUS_LABELS,
   SAAS_STATUS_VARIANTS,
 } from "@/config/subscription";
-import { formatMoney } from "@/lib/subscription";
+import { formatMoney, formatSubscriptionDate } from "@/lib/subscription";
+import { SubscriptionStatusBanner } from "@/components/subscription/subscription-status-banner";
 import { useHasPermission } from "@/hooks/rbac";
 import { toast } from "@/store/toast-store";
 import { cn } from "@/lib/utils";
@@ -83,21 +85,30 @@ export function SubscriptionPlansView({
       plans.find((p) => p.id === subscription.planId)?.monthlyPrice ?? 0;
     const isUpgrade = plan.monthlyPrice >= currentPrice;
     openConfirmDialog("publish", {
-      title: `${isUpgrade ? "Upgrade" : "Downgrade"} to “${plan.name}”?`,
-      description:
-        "Payment gateway not connected — this updates local subscription foundations only.",
-      confirmLabel: isUpgrade ? "Upgrade" : "Downgrade",
+      title: `${isUpgrade ? "Upgrade" : "Downgrade"} to “${plan.displayName || plan.name}”?`,
+      description: isUpgrade
+        ? "Payment gateway is not connected yet. This updates your local subscription plan only — no payment is processed."
+        : "If your current usage exceeds this plan’s limits, the change will be scheduled for the next billing period. Existing data will not be deleted.",
+      confirmLabel: isUpgrade ? "Upgrade" : "Schedule / apply downgrade",
       onConfirm: async () => {
         const result = isUpgrade
           ? await upgradePlan({ planId: plan.id })
-          : await downgradePlan({ planId: plan.id });
+          : await downgradePlan({
+              planId: plan.id,
+              acknowledgeDowngradeLimits: true,
+              scheduleAtPeriodEnd: true,
+            });
         if (!result.success) {
           toast.error(result.error.message);
           return;
         }
         toast.success(
-          isUpgrade ? "Plan upgraded" : "Plan downgraded",
-          plan.name
+          isUpgrade
+            ? "Plan upgraded"
+            : result.data.pendingPlanChange
+              ? "Downgrade scheduled"
+              : "Plan downgraded",
+          plan.displayName || plan.name
         );
         router.refresh();
       },
@@ -107,15 +118,38 @@ export function SubscriptionPlansView({
   function handleCancel() {
     openConfirmDialog("delete", {
       title: "Cancel subscription?",
-      description: "Your license will be marked cancelled. No external billing.",
-      confirmLabel: "Cancel plan",
+      description:
+        "Access continues until the current period ends. You can reverse cancellation before then. Restaurant data will not be deleted.",
+      confirmLabel: "Cancel at period end",
       onConfirm: async () => {
-        const result = await cancelSubscription({});
+        const result = await cancelSubscription({ cancelAtPeriodEnd: true });
         if (!result.success) {
           toast.error(result.error.message);
           return;
         }
-        toast.success("Subscription cancelled");
+        toast.success(
+          "Cancellation scheduled",
+          formatSubscriptionDate(
+            result.data.currentPeriodEnd ?? result.data.renewalDate
+          )
+        );
+        router.refresh();
+      },
+    });
+  }
+
+  function handleReverseCancel() {
+    openConfirmDialog("publish", {
+      title: "Keep your subscription?",
+      description: "This reverses the scheduled cancellation.",
+      confirmLabel: "Keep plan",
+      onConfirm: async () => {
+        const result = await reverseCancellation({});
+        if (!result.success) {
+          toast.error(result.error.message);
+          return;
+        }
+        toast.success("Cancellation reversed");
         router.refresh();
       },
     });
@@ -128,7 +162,10 @@ export function SubscriptionPlansView({
         toast.error(result.error.message);
         return;
       }
-      toast.success("Subscription renewed", result.data.planName);
+      toast.success(
+        "Subscription period extended",
+        "No payment was processed — provider is not configured."
+      );
       router.refresh();
     });
   }
@@ -153,6 +190,8 @@ export function SubscriptionPlansView({
           </div>
         ) : null}
 
+        <SubscriptionStatusBanner subscription={subscription} />
+
         {subscription ? (
           <AppCard
             title="Current subscription"
@@ -166,6 +205,22 @@ export function SubscriptionPlansView({
               </DsBadge>
             }
           >
+            <dl className="mb-4 grid gap-2 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-muted-foreground">Renews on</dt>
+                <dd className="font-medium">
+                  {formatSubscriptionDate(subscription.renewalDate)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Payment</dt>
+                <dd className="font-medium">
+                  {subscription.paymentStatus === "not_configured"
+                    ? "Provider not configured"
+                    : subscription.paymentStatus}
+                </dd>
+              </div>
+            </dl>
             {canManage.allowed ? (
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -177,7 +232,17 @@ export function SubscriptionPlansView({
                 >
                   Renew
                 </Button>
-                {subscription.status !== "cancelled" ? (
+                {subscription.cancelAtPeriodEnd ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="rounded-xl"
+                    disabled={isPending}
+                    onClick={handleReverseCancel}
+                  >
+                    Keep subscription
+                  </Button>
+                ) : subscription.status !== "cancelled" ? (
                   <Button
                     type="button"
                     variant="destructive"
@@ -185,7 +250,7 @@ export function SubscriptionPlansView({
                     disabled={isPending}
                     onClick={handleCancel}
                   >
-                    Cancel
+                    Cancel subscription
                   </Button>
                 ) : null}
               </div>
@@ -225,9 +290,10 @@ export function SubscriptionPlansView({
                 </p>
                 <ul className="mt-4 space-y-1.5 text-sm text-muted-foreground">
                   <li>Branches: {plan.maxBranches}</li>
-                  <li>Users: {plan.maxUsers}</li>
-                  <li>Orders/mo: {plan.maxOrdersPerMonth}</li>
+                  <li>Staff: {plan.maxStaff || plan.maxUsers}</li>
+                  <li>Tables: {plan.maxTables}</li>
                   <li>Menu items: {plan.maxMenuItems}</li>
+                  <li>Customers: {plan.maxCustomers}</li>
                 </ul>
                 <div className="mt-3 flex flex-wrap gap-1">
                   {plan.features.slice(0, 6).map((feature) => (

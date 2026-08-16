@@ -31,6 +31,7 @@ import {
   isFeatureAvailable,
   validateLicense,
 } from "@/lib/subscription";
+import { SubscriptionStatusBanner } from "@/components/subscription/subscription-status-banner";
 import { useHasPermission } from "@/hooks/rbac";
 import { cn } from "@/lib/utils";
 import type { SubscriptionDashboardSummary } from "@/types/subscription";
@@ -42,12 +43,12 @@ type SubscriptionDashboardViewProps = {
 };
 
 const USAGE_KEYS: UsageMetricKey[] = [
-  "users",
   "branches",
-  "orders",
+  "users",
+  "tables",
   "menuItems",
   "customers",
-  "inventoryItems",
+  "orders",
 ];
 
 export function SubscriptionDashboardView({
@@ -59,11 +60,20 @@ export function SubscriptionDashboardView({
     "subscription.update",
   ]);
   const license = validateLicense(summary.subscription);
+  const statusKey =
+    summary.subscription?.effectiveStatus &&
+    summary.subscription.effectiveStatus !== "pending"
+      ? summary.subscription.status === "trial"
+        ? "trialing"
+        : summary.subscription.effectiveStatus === "trialing"
+          ? "trialing"
+          : summary.subscription.status
+      : summary.subscription?.status;
 
   return (
     <PageContainer
       title="Subscription"
-      description="Plan, license, usage, and billing foundations for your restaurant."
+      description="Current plan, usage, and billing for your restaurant."
       actions={
         <div className="flex flex-wrap gap-2">
           <Link
@@ -94,10 +104,16 @@ export function SubscriptionDashboardView({
           </div>
         ) : null}
 
+        <SubscriptionStatusBanner subscription={summary.subscription} />
+
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             title="Current plan"
-            value={summary.currentPlan?.name ?? "None"}
+            value={
+              summary.currentPlan?.displayName ??
+              summary.currentPlan?.name ??
+              "None"
+            }
             accent="primary"
             icon={<CreditCard className="size-4" />}
             description={
@@ -116,14 +132,20 @@ export function SubscriptionDashboardView({
             accent="warning"
             icon={<CalendarClock className="size-4" />}
             description={
-              summary.renewalDate
-                ? `Renews ${formatSubscriptionDate(summary.renewalDate)}`
-                : "No renewal date"
+              summary.access.isTrialActive
+                ? `Trial ends ${formatSubscriptionDate(summary.subscription?.trialEndDate ?? summary.subscription?.trialEnd)}`
+                : summary.renewalDate
+                  ? `Renews ${formatSubscriptionDate(summary.renewalDate)}`
+                  : "No renewal date"
             }
           />
           <StatCard
-            title="License"
-            value={license.valid ? "Valid" : "Invalid"}
+            title="Status"
+            value={
+              statusKey
+                ? SAAS_STATUS_LABELS[statusKey] ?? String(statusKey)
+                : "None"
+            }
             accent={license.valid ? "success" : "danger"}
             icon={<KeyRound className="size-4" />}
             description={license.reason}
@@ -147,12 +169,12 @@ export function SubscriptionDashboardView({
             description="Active subscription overview"
             className="lg:col-span-2"
             action={
-              summary.subscription ? (
+              summary.subscription && statusKey ? (
                 <DsBadge
-                  variant={SAAS_STATUS_VARIANTS[summary.subscription.status]}
+                  variant={SAAS_STATUS_VARIANTS[statusKey]}
                   size="sm"
                 >
-                  {SAAS_STATUS_LABELS[summary.subscription.status]}
+                  {SAAS_STATUS_LABELS[statusKey]}
                 </DsBadge>
               ) : null
             }
@@ -161,27 +183,35 @@ export function SubscriptionDashboardView({
               <dl className="grid gap-3 sm:grid-cols-2">
                 <Detail
                   label="Plan"
-                  value={`${summary.currentPlan.name} (${summary.currentPlan.slug})`}
+                  value={
+                    summary.currentPlan.displayName || summary.currentPlan.name
+                  }
                 />
                 <Detail
                   label="Price"
-                  value={`${formatMoney(summary.currentPlan.monthlyPrice, summary.currentPlan.currency)} / mo`}
+                  value={`${formatMoney(summary.currentPlan.monthlyPrice, summary.currentPlan.currency)} / month`}
                 />
                 <Detail
-                  label="Trial end"
-                  value={formatSubscriptionDate(summary.subscription.trialEnd)}
+                  label="Trial started"
+                  value={formatSubscriptionDate(
+                    summary.subscription.trialStartDate ??
+                      summary.subscription.trialStart
+                  )}
                 />
                 <Detail
-                  label="Renewal"
+                  label="Trial ends"
+                  value={formatSubscriptionDate(
+                    summary.subscription.trialEndDate ??
+                      summary.subscription.trialEnd
+                  )}
+                />
+                <Detail
+                  label="Current period"
+                  value={`${formatSubscriptionDate(summary.subscription.currentPeriodStart)} → ${formatSubscriptionDate(summary.subscription.currentPeriodEnd)}`}
+                />
+                <Detail
+                  label="Renews on"
                   value={formatSubscriptionDate(summary.subscription.renewalDate)}
-                />
-                <Detail
-                  label="License key"
-                  value={
-                    <span className="font-mono text-xs">
-                      {summary.subscription.licenseKey}
-                    </span>
-                  }
                 />
               </dl>
             ) : (
@@ -195,7 +225,16 @@ export function SubscriptionDashboardView({
                 href="/subscription/plans"
                 className={cn(buttonVariants(), "rounded-xl")}
               >
-                {summary.subscription ? "Change plan" : "Choose a plan"}
+                {summary.subscription ? "Upgrade plan" : "Choose a plan"}
+              </Link>
+              <Link
+                href="/subscription/plans"
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "rounded-xl"
+                )}
+              >
+                Change plan
               </Link>
               <Link
                 href="/subscription/history"
@@ -217,8 +256,8 @@ export function SubscriptionDashboardView({
             {summary.upgradeAvailable ? (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Higher tiers are available with more branches, users, and
-                  advanced features.
+                  Higher tiers unlock more branches, staff, tables, and advanced
+                  features. Payment gateway is not connected yet.
                 </p>
                 <Link
                   href="/subscription/plans"
@@ -244,21 +283,28 @@ export function SubscriptionDashboardView({
           </AppCard>
         </div>
 
-        <AppCard title="Usage" description="Current period metrics vs plan limits">
+        <AppCard title="Usage" description="Current usage vs plan limits">
           {summary.usage && summary.limits ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {USAGE_KEYS.map((key) => {
-                const used = summary.usage![key];
+                const used =
+                  key === "tables"
+                    ? summary.usage!.tables
+                    : summary.usage![key];
                 const limit =
                   key === "users"
-                    ? summary.limits!.maxUsers
+                    ? summary.limits!.maxStaff || summary.limits!.maxUsers
                     : key === "branches"
                       ? summary.limits!.maxBranches
                       : key === "orders"
                         ? summary.limits!.maxOrdersPerMonth
                         : key === "menuItems"
                           ? summary.limits!.maxMenuItems
-                          : 0;
+                          : key === "tables"
+                            ? summary.limits!.maxTables
+                            : key === "customers"
+                              ? summary.limits!.maxCustomers
+                              : 0;
                 const pct = limit > 0 ? usagePercent(used, limit) : 0;
                 return (
                   <div
@@ -291,11 +337,22 @@ export function SubscriptionDashboardView({
               Usage metrics will appear after a plan is assigned.
             </p>
           )}
+          <div className="mt-4">
+            <Link
+              href="/subscription/plans"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "rounded-xl"
+              )}
+            >
+              Upgrade plan
+            </Link>
+          </div>
         </AppCard>
 
         <AppCard
           title="Feature access"
-          description="Plan features and override foundation"
+          description="Included with your current plan"
         >
           <div className="flex flex-wrap gap-2">
             {summary.currentPlan?.features.map((feature) => (

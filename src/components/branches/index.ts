@@ -21,3 +21,8 @@ export {
   BranchReceiptSettingsView,
   BranchDevicesSettingsView,
 } from "./branch-settings-views";
+export { BranchesListView } from "./branches-list-view";
+export { BranchesView } from "./branches-view";
+export { BranchForm } from "./branch-form";
+export { BranchDetails } from "./branch-details";
+export { BranchTablesView } from "./branch-tables-view";

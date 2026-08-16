@@ -125,10 +125,10 @@ export const settingsMenuNavigation: MenuItem[] = [
   {
     id: "settings-branches",
     label: "Branches",
-    href: "/settings/branches",
-    route: "settings-branches",
+    href: "/branches",
+    route: "branches",
     icon: GitBranch,
-    description: "Outlet management foundation",
+    description: "Outlet and table QR management",
     permission: {
       roles: ["super-admin", "restaurant-owner", "manager"],
       permissions: ["branches.view"],

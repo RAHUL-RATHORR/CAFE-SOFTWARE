@@ -55,6 +55,36 @@ const tagsSchema = z.preprocess((value) => {
   return [];
 }, z.array(z.string().trim().max(40)).max(20).default([]));
 
+const customizationOptionSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  name: z.string().trim().min(1).max(120),
+  priceDelta: z.coerce.number().min(-1_000_000).max(1_000_000).default(0),
+  isAvailable: z.boolean().default(true),
+});
+
+const customizationGroupSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  name: z.string().trim().min(1).max(120),
+  required: z.boolean().default(false),
+  min: z.coerce.number().int().min(0).max(20).default(0),
+  max: z.coerce.number().int().min(0).max(20).default(1),
+  options: z.array(customizationOptionSchema).max(40).default([]),
+});
+
+/** Accept JSON string or array from lightweight admin authoring. */
+const customizationGroupsSchema = z.preprocess((value) => {
+  if (value == null || value === "") return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}, z.array(customizationGroupSchema).max(20).default([]));
+
 export const menuItemPriceSchema = z
   .object({
     price: priceValidator,
@@ -108,6 +138,7 @@ const menuItemFieldsSchema = z.object({
     .default(0),
   tags: tagsSchema,
   branchId: optionalObjectId,
+  customizationGroups: customizationGroupsSchema,
 });
 
 function refineMenuItemPrices<T extends { price: number; discountPrice?: number | null }>(

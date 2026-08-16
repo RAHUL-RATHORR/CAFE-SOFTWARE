@@ -51,9 +51,10 @@ export function AdminPlansView({ plans, errorMessage }: AdminPlansViewProps) {
               </span>
             </p>
             <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
-              <li>Users: {plan.maxUsers}</li>
+              <li>Staff: {plan.maxStaff || plan.maxUsers}</li>
               <li>Branches: {plan.maxBranches}</li>
-              <li>Orders/mo: {plan.maxOrdersPerMonth}</li>
+              <li>Tables: {plan.maxTables}</li>
+              <li>Menu items: {plan.maxMenuItems}</li>
               <li>Features: {plan.features.length}</li>
             </ul>
           </AppCard>

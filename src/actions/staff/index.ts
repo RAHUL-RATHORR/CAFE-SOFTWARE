@@ -11,6 +11,7 @@ import {
 } from "@/lib/validators/staff";
 import { employeeRepository } from "@/repositories/staff";
 import { resolveStaffActor } from "@/actions/staff/context";
+import { enforcePlanResourceLimit } from "@/lib/subscription/guards";
 import type {
   Employee,
   EmployeeListResult,
@@ -54,6 +55,14 @@ export async function createEmployee(
 ): Promise<StaffActionResult<Employee>> {
   const actor = await resolveStaffActor(["staff.create", "staff.manage"]);
   if (!actor.success) return actor;
+
+  const limitGate = await enforcePlanResourceLimit({
+    restaurantId: actor.data.restaurantId,
+    key: "staff",
+  });
+  if (!limitGate.success) {
+    return staffFailure("FORBIDDEN", limitGate.error.message);
+  }
 
   const parsed = createEmployeeSchema.safeParse(input);
   if (!parsed.success) {

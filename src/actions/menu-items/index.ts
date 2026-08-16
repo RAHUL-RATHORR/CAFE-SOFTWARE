@@ -18,6 +18,7 @@ import {
 } from "@/lib/validators/menu-item";
 import { menuItemRepository } from "@/repositories/menu-item";
 import { categoryRepository } from "@/repositories/category";
+import { enforcePlanResourceLimit } from "@/lib/subscription/guards";
 import { resolveMenuItemActor } from "@/actions/menu-items/context";
 import type {
   CategoryOption,
@@ -67,6 +68,14 @@ export async function createMenuItem(
     "menu-items.manage",
   ]);
   if (!actor.success) return actor;
+
+  const limitGate = await enforcePlanResourceLimit({
+    restaurantId: actor.data.restaurantId,
+    key: "menuItems",
+  });
+  if (!limitGate.success) {
+    return menuItemFailure("FORBIDDEN", limitGate.error.message);
+  }
 
   const parsed = createMenuItemSchema.safeParse(input);
   if (!parsed.success) {
@@ -137,6 +146,7 @@ export async function createMenuItem(
       isFeatured: values.isFeatured ?? false,
       displayOrder: values.displayOrder ?? 0,
       tags: values.tags ?? [],
+      customizationGroups: values.customizationGroups ?? [],
       createdBy: actor.data.userId,
     });
 

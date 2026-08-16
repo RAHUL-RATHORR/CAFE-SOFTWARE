@@ -39,7 +39,7 @@ export function SubscriptionUsageView({
   return (
     <PageContainer
       title="Usage"
-      description="Track consumption against tenant limits. Enforcement is prepared but not active."
+      description="Track consumption against your plan limits. Creating new resources is blocked when a limit is reached."
       actions={
         <Link
           href="/subscription"

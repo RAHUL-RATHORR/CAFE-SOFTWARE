@@ -1,31 +1,14 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
 import { authConfig } from "@/lib/auth/auth.config";
 import { loginSchema } from "@/lib/validations/auth";
-import type { AppRole } from "@/types/auth";
-
-function getDemoUser() {
-  const email =
-    process.env.AUTH_DEMO_EMAIL?.trim().toLowerCase() ||
-    "admin@dineflow.local";
-  const password = process.env.AUTH_DEMO_PASSWORD || "Demo@12345";
-  const role = (process.env.AUTH_DEMO_ROLE as AppRole | undefined) || "manager";
-
-  return {
-    id: "demo-user",
-    email,
-    password,
-    name: "Alex Doe",
-    role,
-    restaurantId:
-      process.env.AUTH_DEMO_RESTAURANT_ID || "67a000000000000000000001",
-  };
-}
+import { connectToDatabase } from "@/lib/database/connection";
+import { UserModel } from "@/models/user";
 
 /**
  * Auth.js (NextAuth v5) entrypoint for DineFlow.
- * Credentials provider authenticates against env demo user for foundation use.
- * OAuth providers and MongoDB adapter are prepared as future extensions.
+ * Credentials provider authenticates against MongoDB.
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -63,30 +46,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
-        // Rate-limiting placeholder — evaluate authSecurityConfig.rateLimiting later
-
-        const demo = getDemoUser();
         const email = parsed.data.email.trim().toLowerCase();
 
-        if (email !== demo.email || parsed.data.password !== demo.password) {
-          // Audit-log placeholder: login_failed
+        await connectToDatabase();
+
+        const user = await UserModel.findOne({ email }).lean();
+
+        if (!user || !user.password) {
+          return null;
+        }
+        
+        if (user.status === "suspended" || user.isDeleted) {
+           return null;
+        }
+
+        const isPasswordValid = await bcrypt.compare(
+          parsed.data.password,
+          user.password
+        );
+
+        if (!isPasswordValid) {
           return null;
         }
 
-        // Audit-log placeholder: login
         return {
-          id: demo.id,
-          email: demo.email,
-          name: demo.name,
-          role: demo.role,
-          restaurantId: demo.restaurantId,
+          id: user._id.toString(),
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          restaurantId: user.restaurantId?.toString() || null,
+          mustChangePassword: user.mustChangePassword,
           rememberMe: parsed.data.rememberMe,
         };
       },
     }),
-    /**
-     * Future OAuth providers (Google / Microsoft) — enable via authSecurityConfig.oauth
-     * when credentials and consent screens are configured.
-     */
   ],
 });

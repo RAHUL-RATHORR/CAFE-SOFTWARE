@@ -20,6 +20,21 @@ const guestCartItemSchema = new Schema(
     notes: { type: String, trim: true, maxlength: 255, default: "" },
     isVeg: { type: Boolean, default: true },
     image: { type: String, trim: true, default: "" },
+    customizations: {
+      type: [
+        new Schema(
+          {
+            groupId: { type: String, default: "" },
+            groupName: { type: String, default: "" },
+            optionId: { type: String, default: "" },
+            optionName: { type: String, default: "" },
+            priceDelta: { type: Number, default: 0 },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   { _id: false }
 );
@@ -62,6 +77,20 @@ const qrCodeSchema = new Schema(
 );
 
 qrCodeSchema.index({ restaurantId: 1, type: 1, tableId: 1 });
+qrCodeSchema.index({ token: 1, isActive: 1, isDeleted: 1 });
+/** At most one active table QR per table */
+qrCodeSchema.index(
+  { tableId: 1, type: 1, isActive: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: "table",
+      isActive: true,
+      isDeleted: false,
+      tableId: { $type: "objectId" },
+    },
+  }
+);
 
 export type QrCodeDocument = InferSchemaType<typeof qrCodeSchema> & {
   _id: Schema.Types.ObjectId;
@@ -157,11 +186,34 @@ const publicOrderPlaceholderSchema = new Schema(
     },
     estimatedMinutes: { type: Number, default: null, min: 0 },
     notes: { type: String, trim: true, maxlength: 500, default: "" },
+    idempotencyKey: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+      default: null,
+    },
+    branchId: {
+      type: Schema.Types.ObjectId,
+      ref: "Branch",
+      default: null,
+      index: true,
+    },
   }),
   baseSchemaOptions
 );
 
 publicOrderPlaceholderSchema.index({ restaurantId: 1, createdAt: -1 });
+publicOrderPlaceholderSchema.index({ restaurantId: 1, tableId: 1, createdAt: -1 });
+publicOrderPlaceholderSchema.index(
+  { restaurantId: 1, idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      isDeleted: false,
+      idempotencyKey: { $type: "string", $gt: "" },
+    },
+  }
+);
 
 export type PublicOrderPlaceholderDocument = InferSchemaType<
   typeof publicOrderPlaceholderSchema

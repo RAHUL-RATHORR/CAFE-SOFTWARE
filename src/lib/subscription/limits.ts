@@ -1,55 +1,67 @@
 /**
- * Limit enforcement foundation — informational only.
- * Do not block create/update flows yet.
+ * Plan limit evaluation and feature helpers.
  */
 
 import type {
   LimitCheckResult,
-  SaasFeatureKey,
   SubscriptionPlanEntity,
   TenantLimitSnapshot,
   UsageMetricKey,
   UsageMetrics,
-  FeatureAccess,
 } from "@/types/subscription";
+import {
+  canCreateBranch,
+  canCreateCustomer,
+  canCreateMenuItem,
+  canCreateStaff,
+  canCreateTable,
+  checkResourceLimit,
+  isFeatureAvailable,
+  type ResourceLimitKey,
+} from "@/lib/subscription/access";
+
+export { isFeatureAvailable };
 
 export function planToLimits(
   plan: SubscriptionPlanEntity | null
 ): TenantLimitSnapshot | null {
   if (!plan) return null;
+  const maxStaff = plan.maxStaff || plan.maxUsers;
   return {
     maxBranches: plan.maxBranches,
-    maxUsers: plan.maxUsers,
+    maxStaff,
+    maxUsers: plan.maxUsers || maxStaff,
     maxOrdersPerMonth: plan.maxOrdersPerMonth,
     maxMenuItems: plan.maxMenuItems,
     maxTables: plan.maxTables,
+    maxCustomers: plan.maxCustomers,
     storageLimit: plan.storageLimit,
   };
 }
 
 function buildCheck(
   metric: LimitCheckResult["metric"],
+  label: string,
   used: number,
-  limit: number,
-  label: string
+  limit: number
 ): LimitCheckResult {
   const remaining = Math.max(0, limit - used);
   const wouldBlock = limit > 0 && used >= limit;
   return {
     metric,
+    label,
     limit,
     used,
     remaining,
     wouldBlock,
     message: wouldBlock
-      ? `${label} limit reached (${used}/${limit}). Enforcement not active.`
+      ? `You have reached your plan limit for ${label.toLowerCase()} (${used}/${limit}).`
       : `${label}: ${used}/${limit} used.`,
   };
 }
 
 /**
- * Prepare branch / user / order / storage / feature checks.
- * Returns checks only — never throws or blocks.
+ * Prepare branch / staff / order / storage / feature checks.
  */
 export function evaluateTenantLimits(input: {
   limits: TenantLimitSnapshot | null;
@@ -60,75 +72,97 @@ export function evaluateTenantLimits(input: {
   const usage = input.usage;
   if (!limits || !usage) return [];
 
+  const tablesUsed = input.tablesUsed ?? usage.tables ?? 0;
+
   return [
-    buildCheck("branches", usage.branches, limits.maxBranches, "Branches"),
-    buildCheck("users", usage.users, limits.maxUsers, "Users"),
+    buildCheck("branches", "Branches", usage.branches, limits.maxBranches),
+    buildCheck(
+      "users",
+      "Staff",
+      usage.users,
+      limits.maxStaff || limits.maxUsers
+    ),
     buildCheck(
       "orders",
+      "Orders / month",
       usage.orders,
-      limits.maxOrdersPerMonth,
-      "Orders / month"
+      limits.maxOrdersPerMonth
     ),
-    buildCheck("menuItems", usage.menuItems, limits.maxMenuItems, "Menu items"),
+    buildCheck("menuItems", "Menu items", usage.menuItems, limits.maxMenuItems),
+    buildCheck("tables", "Tables", tablesUsed, limits.maxTables),
     buildCheck(
-      "tables",
-      input.tablesUsed ?? 0,
-      limits.maxTables,
-      "Tables"
+      "customers",
+      "Customers",
+      usage.customers,
+      limits.maxCustomers
     ),
-    buildCheck("storage", usage.storage, limits.storageLimit, "Storage (MB)"),
+    buildCheck("storage", "Storage (MB)", usage.storage, limits.storageLimit),
   ];
 }
 
-export function isFeatureAvailable(
-  feature: SaasFeatureKey,
-  access: FeatureAccess | null,
-  planFeatures?: SaasFeatureKey[]
-): boolean {
-  if (access?.overrides && feature in access.overrides) {
-    return Boolean(access.overrides[feature]);
-  }
-  if (access?.features?.includes(feature)) return true;
-  if (planFeatures?.includes(feature)) return true;
-  return false;
-}
-
-export function usagePercent(
-  used: number,
-  limit: number
-): number {
+export function usagePercent(used: number, limit: number): number {
   if (limit <= 0) return 0;
   return Math.min(100, Math.round((used / limit) * 100));
 }
 
-export type LimitGateKey =
-  | "branches"
-  | "users"
-  | "orders"
-  | "storage"
-  | "menuItems"
-  | "tables"
-  | "feature";
+export type LimitGateKey = ResourceLimitKey | "feature";
 
 /**
- * Future enforcement hook — always allows today.
+ * Enforce resource limits for create mutations.
  */
-export function canProceedWithLimit(key: LimitGateKey): {
-  allowed: true;
-  enforced: false;
+export function canProceedWithLimit(input: {
+  key: LimitGateKey;
+  usage: UsageMetrics | null;
+  limits: TenantLimitSnapshot | null;
+  planName?: string;
+}): {
+  allowed: boolean;
+  enforced: true;
+  check: LimitCheckResult | null;
+  details: ReturnType<typeof checkResourceLimit>["details"];
 } {
-  void key;
-  return { allowed: true, enforced: false };
+  if (input.key === "feature") {
+    return {
+      allowed: true,
+      enforced: true,
+      check: null,
+      details: null,
+    };
+  }
+
+  const result = checkResourceLimit({
+    resource: input.key,
+    usage: input.usage,
+    limits: input.limits,
+    planName: input.planName,
+  });
+
+  return {
+    allowed: result.allowed,
+    enforced: true,
+    check: result.check,
+    details: result.details,
+  };
 }
 
 export function metricLimitMap(
   limits: TenantLimitSnapshot
 ): Partial<Record<UsageMetricKey, number>> {
   return {
-    users: limits.maxUsers,
+    users: limits.maxStaff || limits.maxUsers,
     branches: limits.maxBranches,
     orders: limits.maxOrdersPerMonth,
     menuItems: limits.maxMenuItems,
+    customers: limits.maxCustomers,
     storage: limits.storageLimit,
+    tables: limits.maxTables,
   };
 }
+
+export {
+  canCreateBranch,
+  canCreateStaff,
+  canCreateTable,
+  canCreateMenuItem,
+  canCreateCustomer,
+};

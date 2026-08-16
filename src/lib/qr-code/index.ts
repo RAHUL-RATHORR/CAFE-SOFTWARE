@@ -1,16 +1,18 @@
 /**
- * QR code architecture placeholder for table deep-links.
- * No real QR generation in this module.
+ * Opaque table QR token helpers and public URL builders.
+ * Rendering (canvas/PNG) lives in client components — this module stays isomorphic-safe.
  */
+
+import { randomBytes } from "crypto";
+import { siteConfig } from "@/config/site";
 
 export type QrCodeProviderId = "placeholder" | "qrcode" | "api";
 
 export type QrCodePayload = {
   type: "restaurant-table";
-  restaurantId: string;
-  tableId?: string;
-  tableNumber: string;
+  /** Opaque public URL — never encodes database IDs */
   url: string;
+  tableNumber?: string;
 };
 
 export type QrCodeRenderOptions = {
@@ -22,38 +24,49 @@ export type QrCodeRenderOptions = {
 
 export const qrCodeProviders = [
   {
-    id: "placeholder" as const,
-    label: "Placeholder",
+    id: "qrcode" as const,
+    label: "qrcode library",
     enabled: true,
   },
   {
-    id: "qrcode" as const,
-    label: "qrcode library (future)",
+    id: "placeholder" as const,
+    label: "Placeholder",
     enabled: false,
   },
   {
     id: "api" as const,
-    label: "External QR API (future)",
+    label: "External QR API",
     enabled: false,
   },
 ];
 
+/** 32-byte cryptographically secure opaque token (base64url). */
+export function createOpaqueQrToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function buildPublicTableQrPath(token: string): string {
+  return `/order/${encodeURIComponent(token)}`;
+}
+
+export function buildPublicTableQrUrl(token: string, baseUrl?: string): string {
+  const origin = (baseUrl ?? siteConfig.url).replace(/\/$/, "");
+  return `${origin}${buildPublicTableQrPath(token)}`;
+}
+
 export function buildTableQrPayload(input: {
-  restaurantId: string;
-  tableId?: string;
-  tableNumber: string;
+  token: string;
+  tableNumber?: string;
+  baseUrl?: string;
 }): QrCodePayload {
-  const url = `dineflow://table/${input.restaurantId}/${encodeURIComponent(input.tableNumber)}`;
   return {
     type: "restaurant-table",
-    restaurantId: input.restaurantId,
-    tableId: input.tableId,
+    url: buildPublicTableQrUrl(input.token, input.baseUrl),
     tableNumber: input.tableNumber,
-    url,
   };
 }
 
-/** Returns a deterministic placeholder string — not a rendered QR image. */
+/** @deprecated Prefer opaque token URLs via buildPublicTableQrUrl */
 export function renderQrPlaceholder(
   payload: QrCodePayload,
   _options?: QrCodeRenderOptions

@@ -130,6 +130,27 @@ const branchSchema = new Schema(
       latitude: { type: Number, default: null },
       longitude: { type: Number, default: null },
     },
+    /** Optional GSTIN for the outlet */
+    gstin: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: 15,
+      default: "",
+    },
+    /** Simple daily open/close placeholders (HH:mm) */
+    openingTime: {
+      type: String,
+      trim: true,
+      maxlength: 8,
+      default: "",
+    },
+    closingTime: {
+      type: String,
+      trim: true,
+      maxlength: 8,
+      default: "",
+    },
     isMainBranch: {
       type: Boolean,
       default: false,
