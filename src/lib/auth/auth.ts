@@ -48,36 +48,65 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const email = parsed.data.email.trim().toLowerCase();
 
-        await connectToDatabase();
+        // Local development demo fallback for instant offline/local testing
+        const isDemoLoginEnabled = process.env.NODE_ENV === "development" || process.env.ENABLE_DEMO_LOGIN === "true";
+        if (isDemoLoginEnabled && parsed.data.password === "Demo@12345") {
+          const demoRoles: Record<string, { role: any; name: string }> = {
+            "admin@dineflow.local": { role: "super-admin", name: "Super Admin (Demo)" },
+            "owner@dineflow.local": { role: "restaurant-owner", name: "Restaurant Owner (Demo)" },
+            "manager@dineflow.local": { role: "manager", name: "Manager (Demo)" },
+            "cashier@dineflow.local": { role: "cashier", name: "Cashier (Demo)" },
+            "kitchen@dineflow.local": { role: "kitchen", name: "Kitchen Staff (Demo)" },
+          };
 
-        const user = await UserModel.findOne({ email }).lean();
+          if (demoRoles[email]) {
+            return {
+              id: `demo-${demoRoles[email].role}-id`,
+              email,
+              name: demoRoles[email].name,
+              role: demoRoles[email].role as any,
+              restaurantId: "650000000000000000000001",
+              mustChangePassword: false,
+              rememberMe: parsed.data.rememberMe,
+            };
+          }
+        }
 
-        if (!user || !user.password) {
+        try {
+          await connectToDatabase();
+
+          const user = await UserModel.findOne({ email }).lean();
+
+          if (!user || !user.password) {
+            return null;
+          }
+          
+          if (user.status === "suspended" || user.isDeleted) {
+             return null;
+          }
+
+          const isPasswordValid = await bcrypt.compare(
+            parsed.data.password,
+            user.password
+          );
+
+          if (!isPasswordValid) {
+            return null;
+          }
+
+          return {
+            id: user._id.toString(),
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            restaurantId: user.restaurantId?.toString() || null,
+            mustChangePassword: user.mustChangePassword,
+            rememberMe: parsed.data.rememberMe,
+          };
+        } catch (dbError) {
+          console.warn("[Auth] Database connection failed during authorize:", dbError);
           return null;
         }
-        
-        if (user.status === "suspended" || user.isDeleted) {
-           return null;
-        }
-
-        const isPasswordValid = await bcrypt.compare(
-          parsed.data.password,
-          user.password
-        );
-
-        if (!isPasswordValid) {
-          return null;
-        }
-
-        return {
-          id: user._id.toString(),
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          restaurantId: user.restaurantId?.toString() || null,
-          mustChangePassword: user.mustChangePassword,
-          rememberMe: parsed.data.rememberMe,
-        };
       },
     }),
   ],
