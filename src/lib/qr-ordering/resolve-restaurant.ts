@@ -18,20 +18,44 @@ export async function resolvePublicRestaurant(
     ? notDeletedFilter({ _id: toObjectId(param) })
     : notDeletedFilter({ slug: param.toLowerCase() });
 
-  const doc = await RestaurantModel.findOne(filter).lean();
-  if (!doc) return null;
-  if (doc.isActive === false) return null;
+  try {
+    await connectToDatabase();
+    const doc = await RestaurantModel.findOne(filter).lean();
+    if (doc && doc.isActive !== false) {
+      return {
+        id: String(doc._id),
+        name: doc.name ?? "",
+        slug: doc.slug ?? "",
+        logo: doc.logo ?? "",
+        currency: doc.currency ?? "INR",
+        timezone: doc.timezone ?? "UTC",
+        address: [doc.address, doc.city, doc.state, doc.country]
+          .filter(Boolean)
+          .join(", "),
+        phone: doc.phone ?? "",
+      };
+    }
+  } catch (err) {
+    console.warn("[PublicMenu] Database error resolving restaurant, using dev fallback:", err);
+  }
 
-  return {
-    id: String(doc._id),
-    name: doc.name ?? "",
-    slug: doc.slug ?? "",
-    logo: doc.logo ?? "",
-    currency: doc.currency ?? "INR",
-    timezone: doc.timezone ?? "UTC",
-    address: [doc.address, doc.city, doc.state, doc.country]
-      .filter(Boolean)
-      .join(", "),
-    phone: doc.phone ?? "",
-  };
+  // Development / Demo fallback for custom restaurant URLs (e.g. /menu/royal-cafe)
+  if (process.env.NODE_ENV === "development" || process.env.ENABLE_DEMO_LOGIN === "true") {
+    const formattedName = param
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    return {
+      id: "650000000000000000000001",
+      name: formattedName,
+      slug: param.toLowerCase(),
+      logo: "",
+      currency: "INR",
+      timezone: "Asia/Kolkata",
+      address: "MG Road, Connaught Place, New Delhi",
+      phone: "+91 9876543210",
+    };
+  }
+
+  return null;
 }
