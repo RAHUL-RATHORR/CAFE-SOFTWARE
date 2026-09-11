@@ -234,6 +234,39 @@ async function getPublicMenu(
       },
     };
   } catch (error) {
+    if (process.env.NODE_ENV === "development" || process.env.ENABLE_DEMO_LOGIN === "true") {
+      const restaurant = await resolvePublicRestaurant(restaurantParam);
+      if (!restaurant) return null;
+
+      const categories = [
+        { id: "cat-1", name: "Coffee & Beverages", slug: "beverages", description: "Hot & cold artisanal drinks", displayOrder: 1, isActive: true, isDeleted: false, restaurantId: restaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "cat-2", name: "Pizzas & Burgers", slug: "mains", description: "Freshly baked pizzas & gourmet burgers", displayOrder: 2, isActive: true, isDeleted: false, restaurantId: restaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "cat-3", name: "Desserts & Shakes", slug: "desserts", description: "Sweet treats & handcrafted shakes", displayOrder: 3, isActive: true, isDeleted: false, restaurantId: restaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ];
+
+      const items = [
+        { id: "item-1", name: "Royal Hazelnut Cold Coffee", description: "Smooth espresso blended with hazelnut syrup, chilled milk and ice cream", price: 220, categoryId: "cat-1", isVeg: true, isAvailable: true, isFeatured: true, tags: ["popular", "cold"], image: "", taxRate: 5, PreparationTimeMinutes: 5, isDeleted: false, restaurantId: restaurant.id, branchId: "b1", displayOrder: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "item-2", name: "Artisanal Double Cheese Pizza", description: "Mozzarella & cheddar cheese blend with fresh basil on sourdough crust", price: 450, categoryId: "cat-2", isVeg: true, isAvailable: true, isFeatured: true, tags: ["pizza", "cheese"], image: "", taxRate: 5, PreparationTimeMinutes: 15, isDeleted: false, restaurantId: restaurant.id, branchId: "b1", displayOrder: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "item-3", name: "Classic Smoked Chicken Burger", description: "Juicy smoked chicken patty with caramelized onions, pickles and garlic aioli", price: 380, categoryId: "cat-2", isVeg: false, isAvailable: true, isFeatured: false, tags: ["burger", "non-veg"], image: "", taxRate: 5, PreparationTimeMinutes: 12, isDeleted: false, restaurantId: restaurant.id, branchId: "b1", displayOrder: 3, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "item-4", name: "Belgian Chocolate Lava Cake", description: "Warm molten dark chocolate cake served with vanilla bean ice cream", price: 240, categoryId: "cat-3", isVeg: true, isAvailable: true, isFeatured: true, tags: ["dessert", "chocolate"], image: "", taxRate: 5, PreparationTimeMinutes: 8, isDeleted: false, restaurantId: restaurant.id, branchId: "b1", displayOrder: 4, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ];
+
+      return {
+        restaurant,
+        table: tableParam ? { id: "t1", tableNumber: tableParam, tableName: `Table ${tableParam}`, capacity: 4, status: "available" } : null,
+        categories: categories as Category[],
+        featuredItems: items.filter((i) => i.isFeatured),
+        items: items as MenuItem[],
+        qr: {
+          type: tableParam ? "table" : "restaurant",
+          code: "DEMO_QR",
+          dynamicPayload: "DEMO_QR",
+          validated: true,
+          expired: false,
+        },
+      };
+    }
+
     throw handleDatabaseError(error, "Failed to load public menu");
   }
 }
