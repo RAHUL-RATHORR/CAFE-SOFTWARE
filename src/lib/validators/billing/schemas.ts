@@ -128,9 +128,62 @@ export const generateInvoiceSchema = z.object({
   billId: z.string().trim().min(1),
 });
 
+export const posCustomizationSchema = z.object({
+  groupId: z.string().trim().max(64),
+  groupName: z.string().trim().max(80),
+  optionId: z.string().trim().max(64),
+  optionName: z.string().trim().max(80),
+  priceDelta: z.number().default(0),
+});
+
+export const posLineItemSchema = z.object({
+  menuItemId: z.string().trim().min(1, "Menu item ID is required"),
+  name: z.string().trim().min(1, "Item name is required").max(160),
+  quantity: z.number().int().min(1, "Quantity must be at least 1").max(999),
+  notes: z.string().trim().max(255).optional().or(z.literal("")),
+  customizations: z.array(posCustomizationSchema).optional().default([]),
+});
+
+export const posTenderSchema = z.object({
+  method: z.enum(["cash", "upi", "card", "other"]),
+  amount: moneySchema.min(0, "Tender amount must be non-negative"),
+  reference: z.string().trim().max(120).optional().or(z.literal("")),
+  cashReceived: moneySchema.optional(),
+  changeGiven: moneySchema.optional(),
+});
+
+export const posCheckoutSchema = z.object({
+  branchId: z.string().trim().min(1, "Branch is required"),
+  tableId: z.string().trim().optional().nullable(),
+  orderType: z.enum(["dine-in", "take-away", "delivery"]).default("dine-in"),
+  items: z.array(posLineItemSchema).min(1, "Cart must have at least one item"),
+  discountType: z.enum(["fixed", "percentage"]).optional().default("fixed"),
+  discountValue: moneySchema.optional().default(0),
+  couponCode: z.string().trim().max(64).optional().or(z.literal("")),
+  isInterState: z.boolean().optional().default(false),
+  paymentTenders: z.array(posTenderSchema).optional().default([]),
+  notes: z.string().trim().max(500).optional().or(z.literal("")),
+  customerName: z.string().trim().max(120).optional().or(z.literal("")),
+  customerPhone: z.string().trim().max(30).optional().or(z.literal("")),
+  customerEmail: z.string().trim().max(120).optional().or(z.literal("")),
+});
+
+export const posRecordPaymentSchema = z.object({
+  billId: z.string().trim().min(1, "Bill ID is required"),
+  tenders: z.array(posTenderSchema).min(1, "At least one tender is required"),
+});
+
+export const posRefundBillSchema = z.object({
+  billId: z.string().trim().min(1, "Bill ID is required"),
+  reason: z.string().trim().min(2, "Reason is required").max(500),
+});
+
 export type CreateBillInput = z.infer<typeof createBillSchema>;
 export type UpdateBillInput = z.infer<typeof updateBillSchema>;
 export type SearchBillInput = z.infer<typeof searchBillSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 export type RefundPaymentInput = z.infer<typeof refundPaymentSchema>;
 export type GenerateInvoiceInput = z.infer<typeof generateInvoiceSchema>;
+export type PosCheckoutSchemaInput = z.infer<typeof posCheckoutSchema>;
+export type PosRecordPaymentSchemaInput = z.infer<typeof posRecordPaymentSchema>;
+export type PosRefundBillSchemaInput = z.infer<typeof posRefundBillSchema>;

@@ -59,8 +59,40 @@ export default auth((request) => {
     if (tenantIdPlaceholder) {
       response.headers.set("x-tenant-id-placeholder", tenantIdPlaceholder);
     }
+    
+    // CORS configuration
+    const origin = request.headers.get("origin");
+    if (origin) {
+      const allowedOrigins = (process.env.CORS_ORIGINS || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      
+      const isAllowed =
+        process.env.NODE_ENV === "development" ||
+        allowedOrigins.includes(origin);
+
+      if (isAllowed) {
+        response.headers.set("Access-Control-Allow-Origin", origin);
+        response.headers.set("Access-Control-Allow-Credentials", "true");
+        response.headers.set(
+          "Access-Control-Allow-Methods",
+          "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+        );
+        response.headers.set(
+          "Access-Control-Allow-Headers",
+          "X-CSRF-Token, X-Requested-With, Accept, Accept-Language, Content-Language, Content-Type, Authorization, X-App-Environment, X-Locale-Placeholder, X-Tenant-Id-Placeholder"
+        );
+      }
+    }
+    
     return response;
   };
+
+  // Handle preflight requests
+  if (request.method === "OPTIONS") {
+    return finalize(new NextResponse(null, { status: 204 }));
+  }
 
   if (pathname === "/") {
     const destination = isLoggedIn

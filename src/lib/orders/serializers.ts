@@ -117,6 +117,7 @@ export function serializeOrder(
       labels?.customerLabel ?? getCustomerLabel(customerId) ?? null,
     orderNumber: doc.orderNumber,
     orderType: (doc.orderType ?? "dine-in") as OrderType,
+    source: (doc.source ?? "pos") as "pos" | "qr" | "counter" | "online",
     status: (doc.status ?? "pending") as RestaurantOrderStatus,
     items,
     subtotal: doc.subtotal ?? 0,

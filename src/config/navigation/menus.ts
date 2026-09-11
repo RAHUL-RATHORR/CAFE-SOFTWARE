@@ -29,15 +29,35 @@ export const topNavigation: MenuItem[] = [
     route: "orders",
   },
   {
+    id: "top-pos",
+    label: "POS",
+    href: "/pos",
+    route: "pos",
+  },
+  {
     id: "top-reports",
     label: "Reports",
-    href: "/reports",
+    href: "/administration/reports",
     route: "reports",
+  },
+  {
+    id: "top-backups",
+    label: "Backups",
+    href: "/administration/backups",
+    route: "backups" as any, // bypassing route types for now
   },
 ];
 
 /** Quick action placeholders (command palette / toolbar ready) */
 export const quickActionsNavigation: MenuItem[] = [
+  {
+    id: "qa-pos",
+    label: "POS Terminal",
+    href: "/pos",
+    route: "pos",
+    icon: CreditCard,
+    description: "Counter & dine-in billing",
+  },
   {
     id: "qa-new-order",
     label: "New Order",

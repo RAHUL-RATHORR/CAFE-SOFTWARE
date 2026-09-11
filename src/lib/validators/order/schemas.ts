@@ -177,6 +177,7 @@ export const searchOrderSchema = z.object({
   orderType: z.enum(["all", ...ORDER_TYPES]).default("all"),
   paymentStatus: z.enum(["all", ...PAYMENT_STATUSES]).default("all"),
   priority: z.enum(["all", ...ORDER_PRIORITIES]).default("all"),
+  branchId: z.string().trim().optional().or(z.literal("")),
   tableId: z.string().trim().optional().or(z.literal("")),
   customerId: z.string().trim().optional().or(z.literal("")),
   assignedChefId: z.string().trim().optional().or(z.literal("")),

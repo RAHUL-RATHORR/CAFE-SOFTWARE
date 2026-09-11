@@ -269,3 +269,6 @@ export type SystemEventDocument = InferSchemaType<typeof systemEventSchema> & {
 export const SystemEventModel: Model<SystemEventDocument> =
   models.SystemEvent ||
   model<SystemEventDocument>("SystemEvent", systemEventSchema);
+
+export * from "./message-log.model";
+export * from "./template.model";

@@ -16,6 +16,8 @@ import {
 } from "@/lib/orders";
 import { getCustomerLabel } from "@/config/orders";
 import { OrderModel, type OrderDocument } from "@/models/order";
+import { CustomerModel } from "@/models/customer";
+import { NotificationService } from "@/lib/notification/notification.service";
 import { RestaurantTableModel } from "@/models/restaurant-table";
 import type {
   OrderPriority,
@@ -166,6 +168,10 @@ function buildSearchFilter(
   if (input.paymentStatus !== "all") filter.paymentStatus = input.paymentStatus;
   if (input.priority !== "all") filter.priority = input.priority;
 
+  if (input.branchId && isValidObjectId(input.branchId)) {
+    filter.branchId = toObjectId(input.branchId);
+  }
+
   if (input.tableId && isValidObjectId(input.tableId)) {
     filter.tableId = toObjectId(input.tableId);
   }
@@ -260,7 +266,46 @@ export const orderRepository = {
         updatedBy: actorObjectId(data.createdBy),
       });
 
-      return withLabels(doc);
+      const resolved = await withLabels(doc);
+
+      // Fire and forget notification
+      (async () => {
+        try {
+          let customerEmail = null;
+          let customerPhone = null;
+          if (data.customerId && isValidObjectId(data.customerId)) {
+            const customer = await CustomerModel.findById(data.customerId).lean();
+            if (customer) {
+              customerEmail = customer.email;
+              customerPhone = customer.phone;
+            }
+          }
+
+          if (customerEmail || customerPhone) {
+             await NotificationService.dispatch({
+               eventType: "ORDER_RECEIVED",
+               restaurantId: data.restaurantId,
+               branchId: data.branchId,
+               referenceKey: `ORDER_RECEIVED:${resolved.id}`,
+               recipient: {
+                 email: customerEmail,
+                 phone: customerPhone,
+                 userId: data.customerId,
+               },
+               variables: {
+                 customerName: resolved.customerLabel || "Customer",
+                 orderNumber: resolved.orderNumber,
+                 totalAmount: resolved.grandTotal,
+                 restaurantName: "DineFlow Restaurant" // Assuming context
+               }
+             });
+          }
+        } catch (e) {
+          console.error("Notification dispatch failed", e);
+        }
+      })();
+
+      return resolved;
     } catch (error) {
       throw handleDatabaseError(error, "Failed to create order");
     }
@@ -385,7 +430,62 @@ export const orderRepository = {
       ).exec();
 
       const resolved = asDocument(doc as OrderDocument | null);
-      return resolved ? withLabels(resolved) : null;
+      if (resolved) {
+         const serialized = await withLabels(resolved);
+         
+         // Notify on status change
+         if (data.status !== undefined && data.status !== existing.status) {
+           (async () => {
+             try {
+               let customerEmail = null;
+               let customerPhone = null;
+               if (resolved.customerId) {
+                 const customer = await CustomerModel.findById(resolved.customerId).lean();
+                 if (customer) {
+                   customerEmail = customer.email;
+                   customerPhone = customer.phone;
+                 }
+               }
+     
+               if (customerEmail || customerPhone) {
+                  let eventType = null;
+                  switch (data.status) {
+                    case "confirmed": eventType = "ORDER_CONFIRMED"; break;
+                    case "preparing": eventType = "ORDER_PREPARING"; break;
+                    case "ready": eventType = "ORDER_READY"; break;
+                    case "served": eventType = "ORDER_SERVED"; break;
+                    case "cancelled": eventType = "ORDER_CANCELLED"; break;
+                  }
+                  
+                  if (eventType) {
+                    await NotificationService.dispatch({
+                      eventType,
+                      restaurantId,
+                      branchId: resolved.branchId ? resolved.branchId.toString() : null,
+                      referenceKey: `${eventType}:${serialized.id}`,
+                      recipient: {
+                        email: customerEmail,
+                        phone: customerPhone,
+                        userId: resolved.customerId?.toString(),
+                      },
+                      variables: {
+                        customerName: serialized.customerLabel || "Customer",
+                        orderNumber: serialized.orderNumber,
+                        totalAmount: serialized.grandTotal,
+                        restaurantName: "DineFlow Restaurant" 
+                      }
+                    });
+                  }
+               }
+             } catch (e) {
+               console.error("Notification dispatch failed", e);
+             }
+           })();
+         }
+
+         return serialized;
+      }
+      return null;
     } catch (error) {
       throw handleDatabaseError(error, "Failed to update order");
     }

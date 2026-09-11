@@ -28,7 +28,7 @@ import {
   BILL_PAYMENT_STATUS_LABELS,
   BILL_PAYMENT_STATUS_VARIANTS,
 } from "@/config/billing";
-import { formatBillingDate, formatBillingMoney } from "@/lib/billing";
+import { formatBillingDate, formatBillingMoney } from "@/lib/billing/serializers";
 import { useHasPermission } from "@/hooks/rbac";
 import { cn } from "@/lib/utils";
 import type { BillListResult, BillingSummary } from "@/types/billing";

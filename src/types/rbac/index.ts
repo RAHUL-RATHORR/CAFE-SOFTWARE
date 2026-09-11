@@ -28,7 +28,10 @@ export type RbacResource =
   | "admin"
   | "notifications"
   | "announcements"
-  | "activity";
+  | "activity"
+  | "inventory"
+  | "recipes"
+  | "backups";
 
 export type RbacAction =
   | "view"
@@ -57,7 +60,8 @@ export type RbacAction =
   | "security"
   | "printers"
   | "devices"
-  | "branding";
+  | "branding"
+  | "download";
 
 /** Access scope — branch/custom roles prepared for future multi-branch SaaS */
 export type RbacScope =

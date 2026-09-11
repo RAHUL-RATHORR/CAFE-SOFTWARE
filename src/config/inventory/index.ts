@@ -6,9 +6,9 @@ export const INVENTORY_UNIT_LABELS: Record<InventoryUnit, string> = {
   liter: "Liter (L)",
   ml: "Milliliter (ml)",
   piece: "Piece",
+  packet: "Packet",
   box: "Box",
-  dozen: "Dozen",
-  pack: "Pack",
+  bottle: "Bottle",
 };
 
 /** Seed / fallback ingredient options until inventory UI exists */

@@ -11,6 +11,9 @@ import {
   createBillSchema,
   createPaymentSchema,
   generateInvoiceSchema,
+  posCheckoutSchema,
+  posRecordPaymentSchema,
+  posRefundBillSchema,
   refundPaymentSchema,
   searchBillSchema,
   updateBillSchema,
@@ -21,13 +24,25 @@ import {
 } from "@/repositories/billing";
 import { resolveBillingActor } from "@/actions/billing/context";
 import { getPosCatalog } from "@/actions/billing/catalog";
+import {
+  connectToDatabase,
+  isValidObjectId,
+  notDeletedFilter,
+  toObjectId,
+} from "@/lib/database";
+import { BranchModel } from "@/models/branch";
+import { RestaurantTableModel } from "@/models/restaurant-table";
 import type {
   Bill,
   BillListResult,
   BillingActionResult,
   BillingSummary,
   Invoice,
+  InvoicePrintData,
   Payment,
+  PosBranchOption,
+  PosCheckoutResult,
+  PosTableOption,
   Receipt,
 } from "@/types/billing";
 
@@ -406,4 +421,261 @@ export async function getReceipt(
   }
 }
 
+export async function checkoutPosOrder(
+  input: unknown
+): Promise<BillingActionResult<PosCheckoutResult>> {
+  const parsed = posCheckoutSchema.safeParse(input);
+  if (!parsed.success) {
+    return billingFailure(
+      "VALIDATION_ERROR",
+      "Please fix invalid cart fields.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  const values = parsed.data;
+  const actor = await resolveBillingActor(
+    ["billing.create", "billing.manage", "orders.create"],
+    values.branchId
+  );
+  if (!actor.success) return actor;
+
+  try {
+    const result = await billRepository.checkoutPosOrder(values, {
+      restaurantId: actor.data.restaurantId,
+      branchId: values.branchId,
+      userId: actor.data.userId,
+      role: actor.data.role,
+    });
+
+    revalidateBillingPaths(result.bill.id);
+    revalidatePath("/pos");
+    revalidatePath("/kitchen");
+    revalidatePath("/orders");
+
+    return billingSuccess(result);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+export async function recordPosPayment(
+  input: unknown
+): Promise<BillingActionResult<{ bill: Bill; changeAmount: number }>> {
+  const parsed = posRecordPaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return billingFailure(
+      "VALIDATION_ERROR",
+      "Please enter valid payment details.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  const actor = await resolveBillingActor([
+    "billing.create",
+    "billing.edit",
+    "billing.manage",
+  ]);
+  if (!actor.success) return actor;
+
+  try {
+    const result = await billRepository.recordPosPayment(parsed.data, {
+      restaurantId: actor.data.restaurantId,
+      userId: actor.data.userId,
+    });
+
+    revalidateBillingPaths(result.bill.id);
+    revalidatePath("/pos");
+    return billingSuccess(result);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+export async function refundPosBill(
+  input: unknown
+): Promise<BillingActionResult<Bill>> {
+  const parsed = posRefundBillSchema.safeParse(input);
+  if (!parsed.success) {
+    return billingFailure(
+      "VALIDATION_ERROR",
+      "Please provide a refund reason.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  const actor = await resolveBillingActor([
+    "billing.refund",
+    "billing.manage",
+  ]);
+  if (!actor.success) return actor;
+
+  try {
+    const result = await billRepository.refundPosBill(parsed.data, {
+      restaurantId: actor.data.restaurantId,
+      userId: actor.data.userId,
+    });
+
+    revalidateBillingPaths(result.id);
+    revalidatePath("/pos");
+    revalidatePath("/orders");
+    return billingSuccess(result);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+export async function getPosInvoicePrintData(
+  billId: string
+): Promise<BillingActionResult<InvoicePrintData>> {
+  const actor = await resolveBillingActor([
+    "billing.view",
+    "billing.print",
+    "billing.manage",
+  ]);
+  if (!actor.success) return actor;
+
+  try {
+    const data = await billRepository.getInvoicePrintData(
+      billId,
+      actor.data.restaurantId
+    );
+    return billingSuccess(data);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+export async function getPosTables(
+  branchId?: string | null
+): Promise<BillingActionResult<PosTableOption[]>> {
+  const actor = await resolveBillingActor(
+    ["billing.view", "billing.create", "orders.view", "tables.view"],
+    branchId
+  );
+  if (!actor.success) return actor;
+
+  try {
+    await connectToDatabase();
+    const activeBranchId = branchId || actor.data.branchId;
+    const filter: Record<string, unknown> = notDeletedFilter({
+      restaurantId: toObjectId(actor.data.restaurantId),
+      isActive: true,
+    });
+
+    if (activeBranchId && isValidObjectId(activeBranchId)) {
+      filter.branchId = toObjectId(activeBranchId);
+    }
+
+    const docs = await RestaurantTableModel.find(filter)
+      .sort({ tableNumber: 1, tableName: 1 })
+      .select({
+        tableNumber: 1,
+        tableName: 1,
+        status: 1,
+        capacity: 1,
+        location: 1,
+      })
+      .lean()
+      .exec();
+
+    const tables: PosTableOption[] = docs.map((d) => ({
+      id: String(d._id),
+      tableNumber: d.tableNumber,
+      tableName: d.tableName || `Table ${d.tableNumber}`,
+      status: (d.status as PosTableOption["status"]) || "available",
+      capacity: d.capacity ?? 4,
+      location: d.location || "",
+    }));
+
+    return billingSuccess(tables);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+export async function getPosBranches(): Promise<
+  BillingActionResult<{
+    branches: PosBranchOption[];
+    activeBranchId: string | null;
+    canSwitchBranch: boolean;
+  }>
+> {
+  const actor = await resolveBillingActor([
+    "billing.view",
+    "billing.create",
+    "orders.view",
+  ]);
+  if (!actor.success) return actor;
+
+  try {
+    await connectToDatabase();
+    const branchFilter: Record<string, unknown> = notDeletedFilter({
+      restaurantId: toObjectId(actor.data.restaurantId),
+      status: "active",
+    });
+
+    // If staff is restricted to one branch, only show that branch
+    if (!actor.data.canSwitchBranch && actor.data.branchId) {
+      branchFilter._id = toObjectId(actor.data.branchId);
+    }
+
+    const docs = await BranchModel.find(branchFilter)
+      .sort({ isMainBranch: -1, name: 1 })
+      .select({
+        name: 1,
+        branchCode: 1,
+        isMainBranch: 1,
+        gstin: 1,
+        address: 1,
+      })
+      .lean()
+      .exec();
+
+    const branches: PosBranchOption[] = docs.map((b) => ({
+      id: String(b._id),
+      name: b.name,
+      branchCode: b.branchCode,
+      isMainBranch: Boolean(b.isMainBranch),
+      gstin: b.gstin || "",
+      address: b.address || "",
+    }));
+
+    const activeBranchId =
+      actor.data.branchId || (branches.length > 0 ? branches[0].id : null);
+
+    return billingSuccess({
+      branches,
+      activeBranchId,
+      canSwitchBranch: actor.data.canSwitchBranch,
+    });
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+export async function getPosBillingHistory(
+  input: unknown
+): Promise<BillingActionResult<BillListResult>> {
+  const parsed = searchBillSchema.safeParse(input ?? {});
+  const query = parsed.success ? parsed.data : searchBillSchema.parse({});
+
+  const actor = await resolveBillingActor([
+    "billing.view",
+    "billing.manage",
+  ]);
+  if (!actor.success) return actor;
+
+  try {
+    const result = await billRepository.findMany(
+      actor.data.restaurantId,
+      query
+    );
+    return billingSuccess(result);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
 export { getPosCatalog };
+

@@ -1,11 +1,16 @@
-import { KITCHEN_STATUS_TO_COLUMN } from "@/config/kitchen";
+import {
+  KITCHEN_STATUS_TO_COLUMN,
+  KITCHEN_URGENCY_THRESHOLDS,
+  KITCHEN_VALID_TRANSITIONS,
+} from "@/config/kitchen";
 import type {
   KitchenBoard,
   KitchenBoardColumn,
   KitchenSummary,
   KitchenTicket,
+  KitchenUrgencyLevel,
 } from "@/types/kitchen";
-import type { RestaurantOrder } from "@/types/order";
+import type { RestaurantOrder, RestaurantOrderStatus } from "@/types/order";
 import { KITCHEN_BOARD_COLUMNS } from "@/types/kitchen";
 
 export function formatElapsed(ms: number): string {
@@ -14,12 +19,31 @@ export function formatElapsed(ms: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
   }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+  const minPad = minutes.toString().padStart(2, "0");
+  const secPad = seconds.toString().padStart(2, "0");
+  return `${minPad}:${secPad}`;
+}
+
+export function calculateUrgency(elapsedMs: number): KitchenUrgencyLevel {
+  const elapsedMinutes = elapsedMs / (1000 * 60);
+  if (elapsedMinutes >= KITCHEN_URGENCY_THRESHOLDS.criticalMinutes) {
+    return "critical";
   }
-  return `${seconds}s`;
+  if (elapsedMinutes >= KITCHEN_URGENCY_THRESHOLDS.warningMinutes) {
+    return "warning";
+  }
+  return "normal";
+}
+
+export function isValidStatusTransition(
+  current: RestaurantOrderStatus,
+  next: RestaurantOrderStatus
+): boolean {
+  if (current === next) return true;
+  const allowed = KITCHEN_VALID_TRANSITIONS[current] ?? [];
+  return allowed.includes(next);
 }
 
 export function toKitchenTicket(
@@ -36,28 +60,32 @@ export function toKitchenTicket(
     elapsedLabel: formatElapsed(elapsedMs),
     itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
     boardColumn,
+    urgencyLevel: calculateUrgency(elapsedMs),
   };
 }
 
 export function emptyKitchenBoard(): KitchenBoard {
   return {
-    pending: [],
+    new: [],
+    accepted: [],
     preparing: [],
     ready: [],
-    completed: [],
   };
 }
 
 export function groupTicketsByBoard(tickets: KitchenTicket[]): KitchenBoard {
   const board = emptyKitchenBoard();
   for (const ticket of tickets) {
-    board[ticket.boardColumn].push(ticket);
+    if (board[ticket.boardColumn]) {
+      board[ticket.boardColumn].push(ticket);
+    }
   }
   for (const column of KITCHEN_BOARD_COLUMNS) {
     board[column].sort((a, b) => {
       const priorityRank = priorityWeight(b.priority) - priorityWeight(a.priority);
       if (priorityRank !== 0) return priorityRank;
-      return a.elapsedMs - b.elapsedMs < 0 ? 1 : -1;
+      // Oldest waiting order first (larger elapsedMs first)
+      return b.elapsedMs - a.elapsedMs;
     });
   }
   return board;
@@ -83,7 +111,9 @@ export function buildKitchenSummary(
   completedToday: number
 ): KitchenSummary {
   return {
-    waiting: tickets.filter((ticket) => ticket.boardColumn === "pending").length,
+    waiting: tickets.filter(
+      (ticket) => ticket.boardColumn === "new" || ticket.boardColumn === "accepted"
+    ).length,
     preparing: tickets.filter((ticket) => ticket.boardColumn === "preparing")
       .length,
     ready: tickets.filter((ticket) => ticket.boardColumn === "ready").length,
@@ -95,30 +125,31 @@ export function buildKitchenSummary(
 export function nextKitchenStatus(
   status: RestaurantOrder["status"]
 ): RestaurantOrder["status"] | null {
-  const flow: RestaurantOrder["status"][] = [
-    "pending",
-    "confirmed",
-    "preparing",
-    "ready",
-    "served",
-    "completed",
-  ];
-  const index = flow.indexOf(status);
-  if (index < 0 || index >= flow.length - 1) return null;
-  return flow[index + 1] ?? null;
+  switch (status) {
+    case "pending":
+      return "confirmed";
+    case "confirmed":
+      return "preparing";
+    case "preparing":
+      return "ready";
+    case "ready":
+      return "served";
+    default:
+      return null;
+  }
 }
 
 export function columnDefaultStatus(
   column: KitchenBoardColumn
 ): RestaurantOrder["status"] {
   switch (column) {
-    case "pending":
+    case "new":
       return "pending";
+    case "accepted":
+      return "confirmed";
     case "preparing":
       return "preparing";
     case "ready":
       return "ready";
-    case "completed":
-      return "completed";
   }
 }

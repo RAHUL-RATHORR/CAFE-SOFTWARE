@@ -277,6 +277,16 @@ export const permissionRegistry = {
     group: "insights",
   }),
 
+  "backups.view": definePermission("backups", "view", {
+    group: "administration",
+  }),
+  "backups.create": definePermission("backups", "create", {
+    group: "administration",
+  }),
+  "backups.download": definePermission("backups", "download", {
+    group: "administration",
+  }),
+
   "analytics.view": definePermission("analytics", "view", {
     group: "insights",
     label: "View analytics",
@@ -468,6 +478,58 @@ export const permissionRegistry = {
     group: "restaurant",
     scope: "branch",
     label: "Assign branch staff",
+  }),
+
+  "inventory.view": definePermission("inventory", "view", {
+    group: "operations",
+    scope: "branch",
+    label: "View inventory & stock",
+  }),
+  "inventory.create": definePermission("inventory", "create", {
+    group: "operations",
+    scope: "branch",
+    label: "Create ingredients",
+  }),
+  "inventory.edit": definePermission("inventory", "edit", {
+    group: "operations",
+    scope: "branch",
+    label: "Edit ingredients & adjust stock",
+  }),
+  "inventory.delete": definePermission("inventory", "delete", {
+    group: "operations",
+    scope: "branch",
+    label: "Delete ingredients",
+  }),
+  "inventory.manage": definePermission("inventory", "manage", {
+    group: "operations",
+    scope: "branch",
+    label: "Manage branch inventory",
+  }),
+
+  "recipes.view": definePermission("recipes", "view", {
+    group: "restaurant",
+    scope: "restaurant",
+    label: "View recipes & BOM",
+  }),
+  "recipes.create": definePermission("recipes", "create", {
+    group: "restaurant",
+    scope: "restaurant",
+    label: "Create recipes",
+  }),
+  "recipes.edit": definePermission("recipes", "edit", {
+    group: "restaurant",
+    scope: "restaurant",
+    label: "Edit recipes",
+  }),
+  "recipes.delete": definePermission("recipes", "delete", {
+    group: "restaurant",
+    scope: "restaurant",
+    label: "Delete recipes",
+  }),
+  "recipes.manage": definePermission("recipes", "manage", {
+    group: "restaurant",
+    scope: "restaurant",
+    label: "Manage recipes & BOM",
   }),
 } as const satisfies Record<string, PermissionDefinition>;
 

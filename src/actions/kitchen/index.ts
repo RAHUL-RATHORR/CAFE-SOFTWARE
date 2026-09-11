@@ -9,14 +9,19 @@ import {
   zodFieldErrors,
 } from "@/lib/kitchen";
 import {
-  completeKitchenOrderSchema,
+  acceptKitchenOrderSchema,
+  cancelKitchenOrderSchema,
+  markReadyKitchenOrderSchema,
+  markServedKitchenOrderSchema,
   searchKitchenSchema,
+  startPreparingKitchenOrderSchema,
   updateKitchenPrioritySchema,
   updateKitchenStatusSchema,
 } from "@/lib/validators/kitchen";
 import { kitchenRepository } from "@/repositories/kitchen";
 import { orderRepository } from "@/repositories/order";
 import { resolveKitchenActor } from "@/actions/kitchen/context";
+import { InventoryConsumptionService } from "@/lib/inventory/inventory-consumption-service";
 import type {
   KitchenActionResult,
   KitchenDashboardData,
@@ -25,6 +30,17 @@ import type {
 } from "@/types/kitchen";
 
 function mapDbError(error: unknown): KitchenActionResult<never> {
+  if (error instanceof Error) {
+    if (error.message.startsWith("INVALID_TRANSITION")) {
+      return kitchenFailure("INVALID_TRANSITION", error.message);
+    }
+    if (error.message.startsWith("CONFLICT")) {
+      return kitchenFailure("CONFLICT", error.message);
+    }
+    if (error.message === "NOT_FOUND") {
+      return kitchenFailure("NOT_FOUND", "Order not found or no longer active.");
+    }
+  }
   if (isDatabaseError(error)) {
     return kitchenFailure("DATABASE_ERROR", error.message);
   }
@@ -49,6 +65,7 @@ export async function getKitchenDashboard(
   const actor = await resolveKitchenActor([
     "kitchen.view",
     "kitchen.manage",
+    "orders.view",
   ]);
   if (!actor.success) return actor;
 
@@ -64,7 +81,8 @@ export async function getKitchenDashboard(
   try {
     const data = await kitchenRepository.getDashboard(
       actor.data.restaurantId,
-      parsed.data
+      parsed.data,
+      actor.data.branchId
     );
     return kitchenSuccess(data);
   } catch (error) {
@@ -78,6 +96,7 @@ export async function getKitchenOrder(
   const actor = await resolveKitchenActor([
     "kitchen.view",
     "kitchen.manage",
+    "orders.view",
   ]);
   if (!actor.success) return actor;
 
@@ -90,11 +109,17 @@ export async function getKitchenOrder(
     if (!order) {
       return kitchenFailure("NOT_FOUND", "Kitchen order not found.");
     }
+    if (actor.data.branchId && order.branchId && order.branchId !== actor.data.branchId) {
+      return kitchenFailure(
+        "FORBIDDEN",
+        "You do not have access to this branch order."
+      );
+    }
     const ticket = toKitchenTicket(order);
     if (!ticket) {
       return kitchenFailure(
         "NOT_FOUND",
-        "This order is not available on the kitchen board."
+        "This order is not currently on the active kitchen board."
       );
     }
     return kitchenSuccess(ticket);
@@ -109,12 +134,14 @@ export async function getKitchenFilterOptions(): Promise<
   const actor = await resolveKitchenActor([
     "kitchen.view",
     "kitchen.manage",
+    "orders.view",
   ]);
   if (!actor.success) return actor;
 
   try {
     const options = await kitchenRepository.getFilterOptions(
-      actor.data.restaurantId
+      actor.data.restaurantId,
+      actor.data.branchId
     );
     return kitchenSuccess(options);
   } catch (error) {
@@ -122,16 +149,281 @@ export async function getKitchenFilterOptions(): Promise<
   }
 }
 
-export async function updateKitchenOrderStatus(
+/**
+ * ACCEPT ORDER: pending -> confirmed
+ */
+export async function acceptKitchenOrder(
   input: unknown
 ): Promise<KitchenActionResult<KitchenTicket>> {
   const actor = await resolveKitchenActor([
     "kitchen.update",
     "kitchen.manage",
     "kitchen.edit",
+    "orders.changeStatus",
   ]);
   if (!actor.success) return actor;
 
+  const parsed = acceptKitchenOrderSchema.safeParse(input);
+  if (!parsed.success) {
+    return kitchenFailure(
+      "VALIDATION_ERROR",
+      "Invalid accept request.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  try {
+    const order = await kitchenRepository.changeOrderStatusAtomic({
+      orderId: parsed.data.id,
+      restaurantId: actor.data.restaurantId,
+      nextStatus: "confirmed",
+      userBranchId: actor.data.branchId,
+      changedBy: actor.data.userId,
+      note: parsed.data.note || "Order accepted in kitchen",
+    });
+
+    const ticket = toKitchenTicket(order);
+    revalidateKitchenPaths(order.id);
+
+    // Auto-deduct inventory stock upon kitchen acceptance (idempotent & non-blocking)
+    const effectiveBranchId = order.branchId || actor.data.branchId || "";
+    if (effectiveBranchId && order.items && order.items.length > 0) {
+      InventoryConsumptionService.deductOrderStock(
+        actor.data.restaurantId,
+        effectiveBranchId,
+        order.id,
+        order.items.map((item) => ({
+          menuItemId: item.menuItemId || "",
+          name: item.name,
+          quantity: item.quantity,
+          variantId: item.customizations?.find((c) => c.groupId === "variant")?.optionId || null,
+          selectedAddons: (item.customizations || [])
+            .filter((c) => c.groupId !== "variant")
+            .map((c) => ({
+              addonOptionId: c.optionId,
+              name: c.optionName,
+              quantity: 1,
+            })),
+        })),
+        {
+          orderNumber: order.orderNumber,
+          performedBy: actor.data.userId,
+        }
+      ).catch((invErr) => {
+        console.error("[Kitchen Accept] Inventory deduction non-fatal error:", invErr);
+      });
+    }
+
+    if (!ticket) {
+      return kitchenFailure("NOT_FOUND", "Order left kitchen board.");
+    }
+    return kitchenSuccess(ticket);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+/**
+ * START PREPARING: confirmed -> preparing
+ */
+export async function startPreparingKitchenOrder(
+  input: unknown
+): Promise<KitchenActionResult<KitchenTicket>> {
+  const actor = await resolveKitchenActor([
+    "kitchen.update",
+    "kitchen.manage",
+    "kitchen.edit",
+    "orders.changeStatus",
+  ]);
+  if (!actor.success) return actor;
+
+  const parsed = startPreparingKitchenOrderSchema.safeParse(input);
+  if (!parsed.success) {
+    return kitchenFailure(
+      "VALIDATION_ERROR",
+      "Invalid prepare request.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  try {
+    const order = await kitchenRepository.changeOrderStatusAtomic({
+      orderId: parsed.data.id,
+      restaurantId: actor.data.restaurantId,
+      nextStatus: "preparing",
+      userBranchId: actor.data.branchId,
+      changedBy: actor.data.userId,
+      note: parsed.data.note || "Preparation started in kitchen",
+    });
+
+    const ticket = toKitchenTicket(order);
+    revalidateKitchenPaths(order.id);
+    if (!ticket) {
+      return kitchenFailure("NOT_FOUND", "Order left kitchen board.");
+    }
+    return kitchenSuccess(ticket);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+/**
+ * READY: preparing -> ready
+ */
+export async function markReadyKitchenOrder(
+  input: unknown
+): Promise<KitchenActionResult<KitchenTicket>> {
+  const actor = await resolveKitchenActor([
+    "kitchen.update",
+    "kitchen.manage",
+    "kitchen.edit",
+    "orders.changeStatus",
+  ]);
+  if (!actor.success) return actor;
+
+  const parsed = markReadyKitchenOrderSchema.safeParse(input);
+  if (!parsed.success) {
+    return kitchenFailure(
+      "VALIDATION_ERROR",
+      "Invalid ready request.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  try {
+    const order = await kitchenRepository.changeOrderStatusAtomic({
+      orderId: parsed.data.id,
+      restaurantId: actor.data.restaurantId,
+      nextStatus: "ready",
+      userBranchId: actor.data.branchId,
+      changedBy: actor.data.userId,
+      note: parsed.data.note || "Order marked ready in kitchen",
+    });
+
+    const ticket = toKitchenTicket(order);
+    revalidateKitchenPaths(order.id);
+    if (!ticket) {
+      return kitchenFailure("NOT_FOUND", "Order left kitchen board.");
+    }
+    return kitchenSuccess(ticket);
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+/**
+ * SERVED: ready -> served
+ */
+export async function markServedKitchenOrder(
+  input: unknown
+): Promise<KitchenActionResult<KitchenTicket>> {
+  const actor = await resolveKitchenActor([
+    "kitchen.complete",
+    "kitchen.manage",
+    "orders.changeStatus",
+  ]);
+  if (!actor.success) return actor;
+
+  const parsed = markServedKitchenOrderSchema.safeParse(input);
+  if (!parsed.success) {
+    return kitchenFailure(
+      "VALIDATION_ERROR",
+      "Invalid served request.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  try {
+    const order = await kitchenRepository.changeOrderStatusAtomic({
+      orderId: parsed.data.id,
+      restaurantId: actor.data.restaurantId,
+      nextStatus: "served",
+      userBranchId: actor.data.branchId,
+      changedBy: actor.data.userId,
+      note: parsed.data.note || "Order marked served to customer",
+    });
+
+    revalidateKitchenPaths(order.id);
+    return kitchenSuccess({
+      ...order,
+      elapsedMs: 0,
+      elapsedLabel: "00:00",
+      itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+      boardColumn: "ready",
+      urgencyLevel: "normal",
+    });
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+/**
+ * CANCEL ORDER: any active status -> cancelled
+ */
+export async function cancelKitchenOrder(
+  input: unknown
+): Promise<KitchenActionResult<KitchenTicket>> {
+  const actor = await resolveKitchenActor([
+    "kitchen.manage",
+    "orders.edit",
+    "orders.changeStatus",
+  ]);
+  if (!actor.success) return actor;
+
+  const parsed = cancelKitchenOrderSchema.safeParse(input);
+  if (!parsed.success) {
+    return kitchenFailure(
+      "VALIDATION_ERROR",
+      "Invalid cancel request.",
+      zodFieldErrors(parsed.error.issues)
+    );
+  }
+
+  try {
+    const order = await kitchenRepository.changeOrderStatusAtomic({
+      orderId: parsed.data.id,
+      restaurantId: actor.data.restaurantId,
+      nextStatus: "cancelled",
+      userBranchId: actor.data.branchId,
+      changedBy: actor.data.userId,
+      note: parsed.data.reason || "Order cancelled from kitchen",
+    });
+
+    revalidateKitchenPaths(order.id);
+
+    // Reverse inventory stock (idempotent & non-blocking)
+    const effectiveBranchId = order.branchId || actor.data.branchId || "";
+    if (effectiveBranchId) {
+      InventoryConsumptionService.reverseOrderStock(
+        actor.data.restaurantId,
+        effectiveBranchId,
+        order.id,
+        parsed.data.reason || "Order cancelled from kitchen",
+        actor.data.userId
+      ).catch((revErr) => {
+        console.error("[Kitchen Cancel] Inventory reversal non-fatal error:", revErr);
+      });
+    }
+
+    return kitchenSuccess({
+      ...order,
+      elapsedMs: 0,
+      elapsedLabel: "00:00",
+      itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+      boardColumn: "new",
+      urgencyLevel: "normal",
+    });
+  } catch (error) {
+    return mapDbError(error);
+  }
+}
+
+/**
+ * Generic status update (retained for backward compatibility).
+ */
+export async function updateKitchenOrderStatus(
+  input: unknown
+): Promise<KitchenActionResult<KitchenTicket>> {
   const parsed = updateKitchenStatusSchema.safeParse(input);
   if (!parsed.success) {
     return kitchenFailure(
@@ -141,76 +433,42 @@ export async function updateKitchenOrderStatus(
     );
   }
 
-  try {
-    const order = await orderRepository.changeStatus(
-      parsed.data.id,
-      actor.data.restaurantId,
-      parsed.data.status,
-      actor.data.userId,
-      parsed.data.note || `Kitchen status → ${parsed.data.status}`
-    );
-    if (!order) {
-      return kitchenFailure("NOT_FOUND", "Kitchen order not found.");
-    }
-    const ticket = toKitchenTicket(order);
-    if (!ticket) {
-      revalidateKitchenPaths(order.id);
+  switch (parsed.data.status) {
+    case "confirmed":
+      return acceptKitchenOrder({ id: parsed.data.id, note: parsed.data.note });
+    case "preparing":
+      return startPreparingKitchenOrder({
+        id: parsed.data.id,
+        note: parsed.data.note,
+      });
+    case "ready":
+      return markReadyKitchenOrder({
+        id: parsed.data.id,
+        note: parsed.data.note,
+      });
+    case "served":
+    case "completed":
+      return markServedKitchenOrder({
+        id: parsed.data.id,
+        note: parsed.data.note,
+      });
+    case "cancelled":
+      return cancelKitchenOrder({
+        id: parsed.data.id,
+        reason: parsed.data.note,
+      });
+    default:
       return kitchenFailure(
-        "NOT_FOUND",
-        "Order left the active kitchen board."
+        "INVALID_TRANSITION",
+        `Unsupported target status ${parsed.data.status}`
       );
-    }
-    revalidateKitchenPaths(ticket.id);
-    return kitchenSuccess(ticket);
-  } catch (error) {
-    return mapDbError(error);
   }
 }
 
 export async function completeKitchenOrder(
   input: unknown
 ): Promise<KitchenActionResult<KitchenTicket>> {
-  const actor = await resolveKitchenActor([
-    "kitchen.complete",
-    "kitchen.manage",
-  ]);
-  if (!actor.success) return actor;
-
-  const parsed = completeKitchenOrderSchema.safeParse(input);
-  if (!parsed.success) {
-    return kitchenFailure(
-      "VALIDATION_ERROR",
-      "Invalid order id.",
-      zodFieldErrors(parsed.error.issues)
-    );
-  }
-
-  try {
-    const order = await orderRepository.changeStatus(
-      parsed.data.id,
-      actor.data.restaurantId,
-      "completed",
-      actor.data.userId,
-      "Marked completed from kitchen"
-    );
-    if (!order) {
-      return kitchenFailure("NOT_FOUND", "Kitchen order not found.");
-    }
-    const ticket = toKitchenTicket(order);
-    revalidateKitchenPaths(order.id);
-    if (!ticket) {
-      return kitchenSuccess({
-        ...order,
-        elapsedMs: 0,
-        elapsedLabel: "0s",
-        itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
-        boardColumn: "completed",
-      });
-    }
-    return kitchenSuccess(ticket);
-  } catch (error) {
-    return mapDbError(error);
-  }
+  return markServedKitchenOrder(input);
 }
 
 export async function updateKitchenPriority(

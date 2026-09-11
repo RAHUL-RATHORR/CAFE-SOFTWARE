@@ -3,6 +3,8 @@
  * Foundations only — no external APM, Redis, or queue integrations.
  */
 
+import { APP_NAME, getAppVersion, getBuildId } from "@/config/version";
+
 export const APP_ENVIRONMENTS = [
   "development",
   "staging",
@@ -46,12 +48,9 @@ function resolveAppEnvironment(): AppEnvironment {
 
 export const productionConfig = {
   app: {
-    name: process.env.NEXT_PUBLIC_APP_NAME ?? "DineFlow",
-    version: process.env.NEXT_PUBLIC_APP_VERSION ?? "0.1.0",
-    buildId:
-      process.env.NEXT_PUBLIC_BUILD_ID ??
-      process.env.VERCEL_GIT_COMMIT_SHA ??
-      "local",
+    name: APP_NAME,
+    version: getAppVersion(),
+    buildId: getBuildId(),
     environment: resolveAppEnvironment(),
     isProduction: isProd,
   },

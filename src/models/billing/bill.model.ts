@@ -26,6 +26,21 @@ const billLineItemSchema = new Schema(
     subtotal: { type: Number, required: true, min: 0, default: 0 },
     notes: { type: String, trim: true, maxlength: 255, default: "" },
     modifiers: { type: [String], default: [] },
+    customizations: {
+      type: [
+        new Schema(
+          {
+            groupId: { type: String, trim: true, default: "" },
+            groupName: { type: String, trim: true, default: "" },
+            optionId: { type: String, trim: true, default: "" },
+            optionName: { type: String, trim: true, default: "" },
+            priceDelta: { type: Number, default: 0 },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   { _id: false }
 );
@@ -80,13 +95,25 @@ const billSchema = new Schema(
       label: { type: String, trim: true, maxlength: 64, default: "GST" },
       rate: { type: Number, min: 0, default: 5 },
       amount: { type: Number, min: 0, default: 0 },
+      cgstRate: { type: Number, min: 0, default: 0 },
+      cgstAmount: { type: Number, min: 0, default: 0 },
+      sgstRate: { type: Number, min: 0, default: 0 },
+      sgstAmount: { type: Number, min: 0, default: 0 },
+      igstRate: { type: Number, min: 0, default: 0 },
+      igstAmount: { type: Number, min: 0, default: 0 },
+      taxMode: {
+        type: String,
+        enum: ["exclusive", "inclusive"],
+        default: "exclusive",
+      },
     },
     serviceCharge: { type: Number, required: true, min: 0, default: 0 },
     grandTotal: { type: Number, required: true, min: 0, default: 0 },
     amountPaid: { type: Number, required: true, min: 0, default: 0 },
+    changeGiven: { type: Number, min: 0, default: 0 },
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "partially-paid", "refunded", "failed"],
+      enum: ["pending", "paid", "partially-paid", "refunded", "failed", "void"],
       required: true,
       default: "pending",
       index: true,
@@ -136,9 +163,14 @@ billSchema.index(
   { restaurantId: 1, invoiceNumber: 1 },
   { unique: true, partialFilterExpression: { isDeleted: false } }
 );
+billSchema.index(
+  { restaurantId: 1, branchId: 1, invoiceNumber: 1 },
+  { unique: true, partialFilterExpression: { isDeleted: false } }
+);
 billSchema.index({ restaurantId: 1, paymentStatus: 1, isDeleted: 1 });
 billSchema.index({ restaurantId: 1, orderId: 1 });
 billSchema.index({ restaurantId: 1, createdAt: -1 });
+billSchema.index({ restaurantId: 1, branchId: 1, createdAt: -1 });
 
 export type BillDocument = InferSchemaType<typeof billSchema> & {
   _id: Schema.Types.ObjectId;

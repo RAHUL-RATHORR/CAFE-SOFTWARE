@@ -25,6 +25,7 @@ import {
 } from "@/lib/qr-ordering/pricing";
 import { resolveOrderingSession } from "@/lib/qr-ordering/resolve-ordering-session";
 import { createOpaqueQrToken } from "@/lib/qr-code";
+import { emitKitchenEvent } from "@/lib/kitchen/realtime";
 import { sanitizeText } from "@/lib/security";
 import { settingsRepository } from "@/repositories/settings";
 import {
@@ -528,6 +529,19 @@ async function createGuestOrder(input: CreateGuestOrderInput): Promise<{
       orderId: order.id,
       restaurantId: restaurant.id,
     } as const);
+
+    await emitKitchenEvent({
+      type: "NEW_ORDER",
+      restaurantId: restaurant.id,
+      branchId: branch.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      timestamp: new Date().toISOString(),
+      order,
+    }).catch(() => {
+      /* non-blocking realtime error */
+    });
 
     const placeholder = serializePublicOrderPlaceholder(placeholderDoc);
     return {

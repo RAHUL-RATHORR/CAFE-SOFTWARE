@@ -7,9 +7,13 @@ export const databaseConfig = {
   },
   /** Optional explicit database name override */
   dbName: process.env.MONGODB_DB_NAME?.trim() || undefined,
-  /** Mongoose connect options shared by the connection helper */
   options: {
     bufferCommands: false as const,
+    maxPoolSize: 50,
+    minPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    family: 4 // IPv4, skip trying IPv6
   },
   /** Soft timeout hint for health checks (ms) */
   healthTimeoutMs: 5_000,

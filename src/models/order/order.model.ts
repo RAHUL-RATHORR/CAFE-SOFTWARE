@@ -149,6 +149,12 @@ const orderSchema = new Schema(
       default: "dine-in",
       index: true,
     },
+    source: {
+      type: String,
+      enum: ["pos", "qr", "counter", "online"],
+      default: "pos",
+      index: true,
+    },
     status: {
       type: String,
       enum: [
@@ -255,7 +261,10 @@ orderSchema.index(
   }
 );
 orderSchema.index({ restaurantId: 1, status: 1, isDeleted: 1 });
+orderSchema.index({ restaurantId: 1, branchId: 1, status: 1 });
+orderSchema.index({ restaurantId: 1, publicOrderToken: 1 });
 orderSchema.index({ restaurantId: 1, orderType: 1 });
+orderSchema.index({ restaurantId: 1, source: 1 });
 orderSchema.index({ restaurantId: 1, paymentStatus: 1 });
 orderSchema.index({ restaurantId: 1, priority: 1, status: 1 });
 orderSchema.index({ restaurantId: 1, tableId: 1 });

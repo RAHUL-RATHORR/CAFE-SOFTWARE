@@ -23,14 +23,14 @@ export const navigationGroups: NavigationGroup[] = [
     id: "operations",
     label: "Operations",
     description: "Orders, kitchen, and billing",
-    routes: ["orders", "kitchen", "billing"],
+    routes: ["orders", "pos", "kitchen", "billing"],
     order: 30,
   },
   {
     id: "management",
     label: "Management",
     description: "Customers, vendors, procurement, and staff",
-    routes: ["customers", "vendors", "purchases", "staff", "shifts"],
+    routes: ["inventory", "customers", "vendors", "purchases", "staff", "shifts"],
     order: 40,
   },
   {

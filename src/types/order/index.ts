@@ -80,6 +80,7 @@ export type RestaurantOrder = {
   customerLabel: string | null;
   orderNumber: string;
   orderType: OrderType;
+  source?: "pos" | "qr" | "counter" | "online";
   status: RestaurantOrderStatus;
   items: OrderLineItem[];
   subtotal: number;

@@ -28,6 +28,7 @@ export const RBAC_ACTIONS: readonly RbacAction[] = [
   "printers",
   "devices",
   "branding",
+  "download",
 ] as const;
 
 export const RBAC_ACTION_LABELS: Record<RbacAction, string> = {
@@ -58,4 +59,5 @@ export const RBAC_ACTION_LABELS: Record<RbacAction, string> = {
   printers: "Printers",
   devices: "Devices",
   branding: "Branding",
+  download: "Download",
 };

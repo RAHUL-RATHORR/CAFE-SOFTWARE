@@ -68,7 +68,13 @@ export const RESTAURANT_ROUTE_PREFIXES: string[] = [
 ];
 
 /** Explicitly public paths (no session required) */
-export const PUBLIC_ROUTES: string[] = ["/menu", "/order", "/api/health"];
+export const PUBLIC_ROUTES: string[] = [
+  "/menu",
+  "/order",
+  "/api/health",
+  "/version",
+  "/api/version",
+];
 
 export const AUTH_ERROR_MESSAGES: Record<string, string> = {
   invalid_credentials: "Invalid email or password. Please try again.",

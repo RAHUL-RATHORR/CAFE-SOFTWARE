@@ -22,6 +22,7 @@ import {
   Bell,
   Megaphone,
   Activity,
+  Boxes,
 } from "lucide-react";
 import type { RouteConfig } from "@/types/navigation";
 
@@ -801,6 +802,32 @@ export const routeRegistry = {
       keywords: ["vendors"],
       breadcrumbTitle: "Edit",
       openGraph: { title: "Edit vendor" },
+    },
+  },
+  inventory: {
+    name: "inventory",
+    path: "/inventory",
+    icon: Boxes,
+    parent: null,
+    children: [],
+    description: "Ingredients, recipes, and real-time stock ledger",
+    breadcrumbTitle: "Inventory",
+    pageTitle: "Inventory",
+    seoTitle: "Inventory & Recipes",
+    showInNavigation: true,
+    showInSidebar: true,
+    showInTabs: true,
+    group: "management",
+    permission: {
+      roles: ["super-admin", "restaurant-owner", "manager"],
+      permissions: ["inventory.view"],
+    },
+    metadata: {
+      title: "Inventory",
+      description: "Inventory, stock movements, and BOM recipe management",
+      keywords: ["inventory", "ingredients", "recipes", "stock"],
+      breadcrumbTitle: "Inventory",
+      openGraph: { title: "Inventory" },
     },
   },
   purchases: {

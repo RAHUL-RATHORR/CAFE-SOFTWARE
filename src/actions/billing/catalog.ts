@@ -3,6 +3,7 @@
 import {
   connectToDatabase,
   handleDatabaseError,
+  isValidObjectId,
   notDeletedFilter,
   toObjectId,
 } from "@/lib/database";
@@ -12,33 +13,44 @@ import { MenuItemModel } from "@/models/menu-item";
 import { resolveBillingActor } from "@/actions/billing/context";
 import type { BillingActionResult, PosCatalog } from "@/types/billing";
 
-export async function getPosCatalog(): Promise<
-  BillingActionResult<PosCatalog>
-> {
+export async function getPosCatalog(
+  branchId?: string | null
+): Promise<BillingActionResult<PosCatalog>> {
   const actor = await resolveBillingActor([
     "billing.view",
     "billing.create",
     "billing.manage",
-  ]);
+  ], branchId);
   if (!actor.success) return actor;
 
   try {
     await connectToDatabase();
-    const filter = notDeletedFilter({
+    const filter: Record<string, unknown> = notDeletedFilter({
       restaurantId: toObjectId(actor.data.restaurantId),
     });
 
+    const activeBranchId = branchId || actor.data.branchId;
+    const itemFilter: Record<string, unknown> = {
+      ...filter,
+      isAvailable: true,
+    };
+
+    if (activeBranchId && isValidObjectId(activeBranchId)) {
+      itemFilter.$or = [
+        { branchId: toObjectId(activeBranchId) },
+        { branchId: null },
+        { branchId: { $exists: false } },
+      ];
+    }
+
     const [categories, items] = await Promise.all([
-      CategoryModel.find(filter as Record<string, unknown>)
+      CategoryModel.find(filter)
         .sort({ displayOrder: 1, name: 1 })
         .select({ name: 1 })
         .limit(100)
         .lean()
         .exec(),
-      MenuItemModel.find({
-        ...(filter as Record<string, unknown>),
-        isAvailable: true,
-      })
+      MenuItemModel.find(itemFilter)
         .sort({ displayOrder: 1, name: 1 })
         .select({
           name: 1,
@@ -46,7 +58,9 @@ export async function getPosCatalog(): Promise<
           discountPrice: 1,
           categoryId: 1,
           image: 1,
+          isVeg: 1,
           isAvailable: 1,
+          customizationGroups: 1,
         })
         .limit(400)
         .lean()
@@ -75,7 +89,38 @@ export async function getPosCatalog(): Promise<
         categoryId: String(item.categoryId),
         categoryName: categoryNames.get(String(item.categoryId)) ?? null,
         isAvailable: Boolean(item.isAvailable),
+        isVeg: Boolean(item.isVeg ?? true),
         image: item.image ?? "",
+        customizationGroups: (item.customizationGroups ?? []).map((g: {
+          id?: string;
+          name: string;
+          minSelections?: number;
+          maxSelections?: number;
+          isRequired?: boolean;
+          options?: Array<{
+            id?: string;
+            name: string;
+            priceDelta?: number;
+            isDefault?: boolean;
+          }>;
+        }) => ({
+          id: g.id || g.name,
+          name: g.name,
+          minSelections: g.minSelections,
+          maxSelections: g.maxSelections,
+          isRequired: g.isRequired,
+          options: (g.options ?? []).map((o: {
+            id?: string;
+            name: string;
+            priceDelta?: number;
+            isDefault?: boolean;
+          }) => ({
+            id: o.id || o.name,
+            name: o.name,
+            priceDelta: Number(o.priceDelta ?? 0),
+            isDefault: Boolean(o.isDefault),
+          })),
+        })),
       })),
     });
   } catch (error) {

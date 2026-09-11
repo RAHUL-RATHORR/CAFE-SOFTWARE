@@ -27,7 +27,22 @@ export function serializeBillLineItem(item: {
   subtotal?: number;
   notes?: string;
   modifiers?: string[];
-}): BillLineItem {
+  customizations?: Array<{
+    groupId: string;
+    groupName: string;
+    optionId: string;
+    optionName: string;
+    priceDelta: number;
+  }>;
+}): BillLineItem & {
+  customizations?: Array<{
+    groupId: string;
+    groupName: string;
+    optionId: string;
+    optionName: string;
+    priceDelta: number;
+  }>;
+} {
   return {
     menuItemId: idToString(item.menuItemId),
     name: item.name ?? "",
@@ -38,6 +53,7 @@ export function serializeBillLineItem(item: {
     subtotal: item.subtotal ?? 0,
     notes: item.notes ?? "",
     modifiers: item.modifiers ?? [],
+    customizations: item.customizations ?? [],
   };
 }
 
@@ -155,12 +171,17 @@ export function serializePayment(
   };
 }
 
-export function formatBillingMoney(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(value);
+export function formatBillingMoney(value: number, currency = "INR"): string {
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: currency.toUpperCase(),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `₹${value.toFixed(2)}`;
+  }
 }
 
 export function formatBillingDate(value: string): string {

@@ -8,9 +8,13 @@ export {
   computeDiscountAmount,
   computeTaxAmount,
   computeLineSubtotal,
+  calculateGstTaxBreakdown,
+  calculateCashChange,
+  validateSplitPayments,
   buildInvoiceNumber,
   normalizeBillLines,
 } from "./pricing";
+
 export {
   serializeBill,
   serializePayment,

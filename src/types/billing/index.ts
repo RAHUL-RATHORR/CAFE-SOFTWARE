@@ -176,6 +176,147 @@ export type BillingSummary = {
   };
 };
 
+export type GstBreakdown = {
+  taxableAmount: number;
+  taxRate: number;
+  cgstRate: number;
+  cgstAmount: number;
+  sgstRate: number;
+  sgstAmount: number;
+  igstRate: number;
+  igstAmount: number;
+  totalTax: number;
+  taxMode: "exclusive" | "inclusive";
+  isInterState: boolean;
+};
+
+export type PosCartLineCustomization = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceDelta: number;
+};
+
+export type PosCustomizationOption = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isDefault?: boolean;
+};
+
+export type PosItemCustomizationGroup = {
+  id: string;
+  name: string;
+  minSelections?: number;
+  maxSelections?: number;
+  isRequired?: boolean;
+  options: PosCustomizationOption[];
+};
+
+export type PosPaymentTender = {
+  method: "cash" | "upi" | "card" | "other";
+  amount: number;
+  reference?: string;
+  cashReceived?: number;
+  changeGiven?: number;
+};
+
+export type PosCheckoutInput = {
+  branchId: string;
+  tableId?: string | null;
+  orderType: "dine-in" | "take-away" | "delivery";
+  items: Array<{
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    notes?: string;
+    customizations?: PosCartLineCustomization[];
+  }>;
+  discountType?: "fixed" | "percentage";
+  discountValue?: number;
+  couponCode?: string;
+  isInterState?: boolean;
+  paymentTenders: PosPaymentTender[];
+  notes?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+};
+
+export type PosCheckoutResult = {
+  bill: Bill;
+  order: import("@/types/order").RestaurantOrder;
+  invoiceNumber: string;
+  changeAmount: number;
+  gstBreakdown: GstBreakdown;
+};
+
+export type PosTableOption = {
+  id: string;
+  tableNumber: string;
+  tableName: string;
+  status: "available" | "occupied" | "reserved" | "inactive";
+  capacity: number;
+  location?: string;
+};
+
+export type PosBranchOption = {
+  id: string;
+  name: string;
+  branchCode: string;
+  isMainBranch?: boolean;
+  gstin?: string;
+  address?: string;
+};
+
+export type InvoicePrintData = {
+  invoiceNumber: string;
+  orderNumber: string | null;
+  issuedAt: string;
+  restaurantName: string;
+  legalName: string;
+  logo: string;
+  address: string;
+  phone: string;
+  email: string;
+  gstin: string;
+  branchName: string;
+  branchAddress: string;
+  branchGstin: string;
+  tableLabel: string | null;
+  orderType: string;
+  customerLabel: string | null;
+  customerPhone: string | null;
+  cashierName: string | null;
+  items: Array<{
+    name: string;
+    quantity: number;
+    rate: number;
+    discount: number;
+    amount: number;
+    notes?: string;
+    customizations?: string[];
+  }>;
+  subtotal: number;
+  discount: number;
+  discountLabel: string;
+  taxableAmount: number;
+  gstBreakdown: GstBreakdown;
+  serviceCharge: number;
+  grandTotal: number;
+  amountPaid: number;
+  changeGiven: number;
+  paymentStatus: BillPaymentStatus;
+  payments: Array<{
+    method: string;
+    amount: number;
+    reference: string;
+    timestamp: string;
+  }>;
+  footerNote: string;
+};
+
 export type PosCatalogItem = {
   id: string;
   name: string;
@@ -184,6 +325,8 @@ export type PosCatalogItem = {
   categoryName: string | null;
   isAvailable: boolean;
   image: string;
+  isVeg?: boolean;
+  customizationGroups?: PosItemCustomizationGroup[];
 };
 
 export type PosCatalogCategory = {
@@ -204,6 +347,7 @@ export type PosCartItem = {
   quantity: number;
   notes: string;
   modifiers: string[];
+  customizations?: PosCartLineCustomization[];
 };
 
 export type BillingActionErrorCode =
@@ -226,3 +370,4 @@ export type BillingActionError = {
 export type BillingActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: BillingActionError };
+

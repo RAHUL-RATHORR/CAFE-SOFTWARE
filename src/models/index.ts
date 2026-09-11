@@ -20,6 +20,8 @@ export { OrderModel, type OrderDocument } from "./order";
 
 export { BillModel, PaymentModel, type BillDocument, type PaymentDocument } from "./billing";
 
+export { DailyClosingModel, type DailyClosingDocument } from "./closing";
+
 export { CustomerModel, type CustomerDocument } from "./customer";
 
 export { VendorModel, type VendorDocument } from "./vendor";

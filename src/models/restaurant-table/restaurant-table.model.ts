@@ -113,6 +113,7 @@ restaurantTableSchema.index(
 );
 restaurantTableSchema.index({ restaurantId: 1, status: 1, isDeleted: 1 });
 restaurantTableSchema.index({ restaurantId: 1, branchId: 1, isDeleted: 1 });
+restaurantTableSchema.index({ publicTableToken: 1 });
 restaurantTableSchema.index({ restaurantId: 1, floorId: 1 });
 restaurantTableSchema.index({ restaurantId: 1, displayOrder: 1 });
 restaurantTableSchema.index({ restaurantId: 1, createdAt: -1 });

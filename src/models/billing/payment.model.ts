@@ -36,6 +36,8 @@ const paymentSchema = new Schema(
     },
     reference: { type: String, trim: true, maxlength: 120, default: "" },
     notes: { type: String, trim: true, maxlength: 500, default: "" },
+    cashReceived: { type: Number, min: 0, default: 0 },
+    changeGiven: { type: Number, min: 0, default: 0 },
     refundAmount: { type: Number, min: 0, default: 0 },
     refundedAt: { type: Date, default: null },
   }),
@@ -46,6 +48,7 @@ const paymentSchema = new Schema(
 );
 
 paymentSchema.index({ restaurantId: 1, billId: 1, createdAt: -1 });
+paymentSchema.index({ restaurantId: 1, branchId: 1, createdAt: -1 });
 paymentSchema.index({ restaurantId: 1, status: 1 });
 paymentSchema.index({ restaurantId: 1, method: 1 });
 

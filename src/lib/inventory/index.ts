@@ -1,9 +1,14 @@
+export * from "./unit-converter";
+export * from "./recipe-calculator";
+export * from "./inventory-consumption-service";
+
 import type { IngredientDocument } from "@/models/inventory";
 import type {
   Ingredient,
-  IngredientStatus,
   InventoryUnit,
+  StockStatus,
 } from "@/types/inventory";
+import { calculateStockStatus } from "./recipe-calculator";
 
 function idToString(value: unknown): string | null {
   if (value == null) return null;
@@ -22,33 +27,31 @@ function toIsoDate(value: unknown): string | null {
 }
 
 export function serializeIngredient(doc: IngredientDocument): Ingredient {
+  const currentStock = Number(doc.currentStock ?? 0);
+  const minimumStock = Number(doc.minimumStock ?? 0);
+  const stockStatus: StockStatus = calculateStockStatus(currentStock, minimumStock);
+
   return {
     id: String(doc._id),
     restaurantId: idToString(doc.restaurantId) ?? "",
-    branchId: idToString(doc.branchId),
-    ingredientCode: doc.ingredientCode,
+    branchId: idToString(doc.branchId) ?? "",
+    sku: doc.sku || "",
     name: doc.name,
+    category: doc.category || "General",
+    description: doc.description || "",
     unit: (doc.unit ?? "piece") as InventoryUnit,
-    currentStock: Number(doc.currentStock ?? 0),
+    currentStock,
+    minimumStock,
     reorderLevel: Number(doc.reorderLevel ?? 0),
-    status: (doc.status ?? "active") as IngredientStatus,
-    notes: doc.notes ?? "",
+    maximumStock: doc.maximumStock != null ? Number(doc.maximumStock) : null,
+    costPerUnit: Number(doc.costPerUnit ?? 0),
+    totalValuation: Math.round(currentStock * Number(doc.costPerUnit ?? 0) * 100) / 100,
+    isActive: doc.isActive !== false,
+    stockStatus,
+    allowNegativeStock: doc.allowNegativeStock !== false,
     createdBy: idToString(doc.createdBy),
     updatedBy: idToString(doc.updatedBy),
     createdAt: toIsoDate(doc.createdAt) ?? "",
     updatedAt: toIsoDate(doc.updatedAt) ?? "",
-  };
-}
-
-/**
- * FUTURE PLACEHOLDER — inventory stock update.
- * Intentionally a no-op until the inventory module owns mutations.
- */
-export async function applyInventoryStockUpdatePlaceholder(
-  _payload: unknown
-): Promise<{ applied: false; reason: string }> {
-  return {
-    applied: false,
-    reason: "Inventory stock updates are not enabled yet.",
   };
 }

@@ -27,8 +27,10 @@ export default async function KitchenPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const parsed = searchKitchenSchema.safeParse({
     q: first(params.q) ?? "",
+    branchId: first(params.branchId) ?? "",
     status: first(params.status) ?? "all",
     orderType: first(params.orderType) ?? "all",
+    orderSource: first(params.orderSource) ?? "all",
     priority: first(params.priority) ?? "all",
     tableId: first(params.tableId) ?? "",
     assignedChefId: first(params.assignedChefId) ?? "",
@@ -66,7 +68,7 @@ export default async function KitchenPage({ searchParams }: PageProps) {
   return (
     <PageContainer
       title="Kitchen"
-      description="Monitor preparation queues and ticket status."
+      description="Monitor real-time preparation queues and ticket status."
     >
       <Suspense fallback={<TableLoadingSkeleton rows={4} columns={4} />}>
         <KitchenDashboard
@@ -74,12 +76,14 @@ export default async function KitchenPage({ searchParams }: PageProps) {
           filterOptions={
             options.success
               ? options.data
-              : { tables: [], chefs: CHEF_OPTIONS }
+              : { tables: [], chefs: CHEF_OPTIONS, branches: [], canSwitchBranch: true }
           }
           query={{
             q: queryInput.q ?? "",
+            branchId: queryInput.branchId ?? "",
             status: queryInput.status,
             orderType: queryInput.orderType,
+            orderSource: queryInput.orderSource,
             priority: queryInput.priority,
             tableId: queryInput.tableId ?? "",
             assignedChefId: queryInput.assignedChefId ?? "",

@@ -27,6 +27,9 @@ export const RBAC_RESOURCES: readonly RbacResource[] = [
   "notifications",
   "announcements",
   "activity",
+  "inventory",
+  "recipes",
+  "backups",
 ] as const;
 
 export const RBAC_RESOURCE_LABELS: Record<RbacResource, string> = {
@@ -56,4 +59,7 @@ export const RBAC_RESOURCE_LABELS: Record<RbacResource, string> = {
   notifications: "Notifications",
   announcements: "Announcements",
   activity: "Activity",
+  inventory: "Inventory",
+  recipes: "Recipes",
+  backups: "Backups",
 };

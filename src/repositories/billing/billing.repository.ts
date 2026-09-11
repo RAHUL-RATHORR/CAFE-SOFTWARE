@@ -10,15 +10,29 @@ import {
 } from "@/lib/database";
 import {
   buildInvoiceNumber,
+  calculateGstTaxBreakdown,
   computeBillTotals,
+  computeDiscountAmount,
   derivePaymentStatus,
   normalizeBillLines,
   serializeBill,
   serializePayment,
 } from "@/lib/billing";
+import { generateNextInvoiceNumber } from "@/lib/billing/invoice-number";
 import { getCustomerLabel } from "@/config/orders";
 import { BillModel, PaymentModel, type BillDocument } from "@/models/billing";
 import { OrderModel } from "@/models/order";
+import { CustomerModel } from "@/models/customer";
+import { NotificationService } from "@/lib/notification/notification.service";
+import { BranchModel } from "@/models/branch";
+import { RestaurantTableModel } from "@/models/restaurant-table";
+import { MenuItemModel } from "@/models/menu-item";
+import { TaxSettingsModel } from "@/models/settings";
+import { RestaurantModel } from "@/models/restaurant";
+import { UserModel } from "@/models/user";
+import { emitKitchenEvent } from "@/lib/kitchen/realtime";
+import { serializeOrder } from "@/lib/orders/serializers";
+import { InventoryConsumptionService } from "@/lib/inventory/inventory-consumption-service";
 import type {
   Bill,
   BillListResult,
@@ -27,8 +41,14 @@ import type {
   BillSortField,
   BillingSummary,
   DiscountType,
+  GstBreakdown,
   Invoice,
+  InvoicePrintData,
   Payment,
+  PosCartLineCustomization,
+  PosCheckoutInput,
+  PosCheckoutResult,
+  PosPaymentTender,
   Receipt,
   TaxType,
 } from "@/types/billing";
@@ -458,6 +478,740 @@ export const billRepository = {
       throw handleDatabaseError(error, "Failed to load billing summary");
     }
   },
+
+  async checkoutPosOrder(
+    input: PosCheckoutInput,
+    actor: {
+      restaurantId: string;
+      branchId: string;
+      userId: string;
+      role?: string;
+    }
+  ): Promise<PosCheckoutResult> {
+    await connectToDatabase();
+
+    if (!isValidObjectId(input.branchId)) {
+      throw Object.assign(new Error("Invalid branch ID"), {
+        code: "VALIDATION_ERROR",
+      });
+    }
+
+    const branch = await BranchModel.findOne(
+      notDeletedFilter({
+        _id: toObjectId(input.branchId),
+        restaurantId: toObjectId(actor.restaurantId),
+      }) as Filter
+    ).exec();
+
+    if (!branch) {
+      throw Object.assign(new Error("Branch not found or access denied"), {
+        code: "FORBIDDEN",
+      });
+    }
+
+    let tableDoc: import("@/models/restaurant-table").RestaurantTableDocument | null =
+      null;
+    if (input.orderType === "dine-in" && input.tableId) {
+      if (!isValidObjectId(input.tableId)) {
+        throw Object.assign(new Error("Invalid table ID"), {
+          code: "VALIDATION_ERROR",
+        });
+      }
+      tableDoc = await RestaurantTableModel.findOne(
+        notDeletedFilter({
+          _id: toObjectId(input.tableId),
+          restaurantId: toObjectId(actor.restaurantId),
+          branchId: toObjectId(input.branchId),
+        }) as Filter
+      ).exec();
+
+      if (!tableDoc) {
+        throw Object.assign(
+          new Error("Table not found or not in selected branch"),
+          { code: "VALIDATION_ERROR" }
+        );
+      }
+      if (tableDoc.status === "inactive") {
+        throw Object.assign(new Error("Selected table is inactive"), {
+          code: "VALIDATION_ERROR",
+        });
+      }
+    }
+
+    if (!input.items || input.items.length === 0) {
+      throw Object.assign(
+        new Error("Cart must contain at least one item"),
+        { code: "VALIDATION_ERROR" }
+      );
+    }
+
+    const menuIds = [...new Set(input.items.map((i) => i.menuItemId))];
+    const catalogDocs = await MenuItemModel.find(
+      notDeletedFilter({
+        _id: { $in: menuIds.filter(isValidObjectId).map(toObjectId) },
+        restaurantId: toObjectId(actor.restaurantId),
+      }) as Filter
+    )
+      .lean()
+      .exec();
+
+    const catalogMap = new Map(
+      catalogDocs.map((doc) => [String(doc._id), doc])
+    );
+
+    const verifiedLines: Array<{
+      menuItemId: unknown;
+      name: string;
+      price: number;
+      quantity: number;
+      subtotal: number;
+      notes: string;
+      customizations: PosCartLineCustomization[];
+    }> = [];
+    let subtotal = 0;
+
+    for (const item of input.items) {
+      const catalogItem = catalogMap.get(item.menuItemId);
+      if (!catalogItem) {
+        throw Object.assign(
+          new Error(`Menu item not found or unauthorized: ${item.name}`),
+          { code: "VALIDATION_ERROR" }
+        );
+      }
+      if (catalogItem.isAvailable === false) {
+        throw Object.assign(
+          new Error(`Item is marked unavailable: ${catalogItem.name}`),
+          { code: "VALIDATION_ERROR" }
+        );
+      }
+
+      let lineUnitPrice = catalogItem.price;
+      const appliedCustomizations: PosCartLineCustomization[] = [];
+
+      if (item.customizations && item.customizations.length > 0) {
+        const groups = catalogItem.customizationGroups || [];
+        for (const cust of item.customizations) {
+          const matchedGroup = groups.find(
+            (g: { id?: string; name: string }) =>
+              g.id === cust.groupId || g.name === cust.groupName
+          );
+          if (matchedGroup && matchedGroup.options) {
+            const matchedOption = matchedGroup.options.find(
+              (o: { id?: string; name: string; priceDelta?: number }) =>
+                o.id === cust.optionId || o.name === cust.optionName
+            );
+            if (matchedOption) {
+              const delta = matchedOption.priceDelta || 0;
+              lineUnitPrice += delta;
+              appliedCustomizations.push({
+                groupId: cust.groupId,
+                groupName: matchedGroup.name,
+                optionId: cust.optionId,
+                optionName: matchedOption.name,
+                priceDelta: delta,
+              });
+            }
+          }
+        }
+      }
+
+      const lineSubtotal =
+        Math.round(lineUnitPrice * item.quantity * 100) / 100;
+      subtotal += lineSubtotal;
+
+      verifiedLines.push({
+        menuItemId: catalogItem._id,
+        name: catalogItem.name,
+        price: lineUnitPrice,
+        quantity: item.quantity,
+        subtotal: lineSubtotal,
+        notes: item.notes?.trim() || "",
+        customizations: appliedCustomizations,
+      });
+    }
+
+    subtotal = Math.round(subtotal * 100) / 100;
+
+    const discountType: DiscountType = input.discountType ?? "fixed";
+    let discountAmount = 0;
+    if (input.discountValue && input.discountValue > 0) {
+      discountAmount = computeDiscountAmount(
+        subtotal,
+        discountType,
+        input.discountValue
+      );
+    }
+    discountAmount = Math.min(Math.max(0, discountAmount), subtotal);
+
+    const taxSettings = await TaxSettingsModel.findOne(
+      notDeletedFilter({ restaurantId: toObjectId(actor.restaurantId) }) as Filter
+    )
+      .lean()
+      .exec();
+
+    const defaultProfile =
+      (taxSettings?.profiles ?? []).find((p: { isDefault?: boolean }) => p.isDefault) ||
+      taxSettings?.profiles?.[0];
+    const taxRate = defaultProfile ? (defaultProfile as { gstPercent?: number }).gstPercent || 5 : 5;
+    const isInterState = Boolean(input.isInterState);
+    const taxMode = taxSettings?.taxMode === "inclusive" ? "inclusive" : "exclusive";
+
+    const gstBreakdown: GstBreakdown = calculateGstTaxBreakdown({
+      taxableAmount: Math.max(0, subtotal - discountAmount),
+      taxRate,
+      taxMode,
+      isInterState,
+    });
+
+    const grandTotal =
+      taxMode === "inclusive"
+        ? Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100)
+        : Math.max(
+            0,
+            Math.round(
+              (subtotal - discountAmount + gstBreakdown.totalTax) * 100
+            ) / 100
+          );
+
+    let totalTenderPaid = 0;
+    let changeAmount = 0;
+
+    if (input.paymentTenders && input.paymentTenders.length > 0) {
+      for (const tender of input.paymentTenders) {
+        totalTenderPaid += Math.max(0, tender.amount);
+        if (
+          tender.method === "cash" &&
+          tender.cashReceived &&
+          tender.cashReceived > tender.amount
+        ) {
+          changeAmount = Math.max(
+            0,
+            Math.round((tender.cashReceived - tender.amount) * 100) / 100
+          );
+        }
+      }
+    }
+    totalTenderPaid = Math.round(totalTenderPaid * 100) / 100;
+
+    const paymentStatus: BillPaymentStatus =
+      totalTenderPaid >= grandTotal - 0.001
+        ? "paid"
+        : totalTenderPaid > 0
+          ? "partially-paid"
+          : "pending";
+
+    let primaryPaymentMethod: BillPaymentMethod = "cash";
+    if ((input.paymentTenders ?? []).length === 1) {
+      const m = input.paymentTenders[0].method;
+      primaryPaymentMethod =
+        m === "card"
+          ? "card"
+          : m === "upi"
+            ? "upi"
+            : "cash";
+    } else if ((input.paymentTenders ?? []).length > 1) {
+      primaryPaymentMethod = "multiple";
+    }
+
+    const orderPaymentMethod: "none" | "cash" | "card" | "upi" | "wallet" | "other" =
+      primaryPaymentMethod === "multiple"
+        ? "other"
+        : primaryPaymentMethod;
+
+    const invoiceNumber = await generateNextInvoiceNumber(
+      actor.restaurantId,
+      branch.branchCode
+    );
+    const orderNumber = `POS-${branch.branchCode || "ORD"}-${Date.now()
+      .toString(36)
+      .toUpperCase()
+      .slice(-5)}`;
+
+    const orderDoc = await OrderModel.create({
+      restaurantId: toObjectId(actor.restaurantId),
+      branchId: toObjectId(input.branchId),
+      tableId: tableDoc ? toObjectId(String(tableDoc._id)) : null,
+      orderNumber,
+      orderType: input.orderType,
+      source: "pos",
+      status: "confirmed",
+      items: verifiedLines.map((l) => ({
+        menuItemId: l.menuItemId,
+        name: l.name,
+        price: l.price,
+        quantity: l.quantity,
+        discount: 0,
+        tax: 0,
+        subtotal: l.subtotal,
+        notes: l.notes,
+        customizations: l.customizations,
+      })),
+      subtotal,
+      discount: discountAmount,
+      tax: gstBreakdown.totalTax,
+      serviceCharge: 0,
+      grandTotal,
+      paymentStatus,
+      paymentMethod: orderPaymentMethod,
+      priority: "normal",
+      notes: input.notes?.trim() || "",
+      statusHistory: [
+        {
+          status: "confirmed",
+          changedAt: new Date(),
+          changedBy: toObjectId(actor.userId),
+          note: `Order placed via POS by staff`,
+        },
+      ],
+      createdBy: toObjectId(actor.userId),
+      updatedBy: toObjectId(actor.userId),
+    });
+
+    const customerLabel = input.customerName
+      ? `${input.customerName}${input.customerPhone ? ` (${input.customerPhone})` : ""}`
+      : null;
+
+    const serializedOrder = serializeOrder(orderDoc, {
+      tableLabel: tableDoc
+        ? `${tableDoc.tableName} (${tableDoc.tableNumber})`
+        : null,
+      customerLabel,
+    });
+
+    await emitKitchenEvent({
+      type: "NEW_ORDER",
+      restaurantId: actor.restaurantId,
+      branchId: input.branchId,
+      orderId: String(orderDoc._id),
+      orderNumber,
+      status: "confirmed",
+      timestamp: new Date().toISOString(),
+      order: serializedOrder,
+    }).catch(() => {});
+
+    // Deduct stock for POS confirmed order (server-authoritative, non-blocking to billing)
+    InventoryConsumptionService.deductOrderStock(
+      actor.restaurantId,
+      input.branchId,
+      String(orderDoc._id),
+      verifiedLines.map((l) => {
+        const customizations = Array.isArray(l.customizations) ? l.customizations : [];
+        const variantCustomization = customizations.find((c) => c.groupId === "variant");
+        const addonCustomizations = customizations.filter((c) => c.groupId !== "variant");
+
+        return {
+          menuItemId: String(l.menuItemId),
+          name: l.name,
+          quantity: l.quantity,
+          variantId: variantCustomization?.optionId || null,
+          selectedAddons: addonCustomizations.map((a) => ({
+            addonOptionId: a.optionId,
+            name: a.optionName,
+            quantity: 1,
+          })),
+        };
+      }),
+      {
+        orderNumber,
+        performedBy: actor.userId,
+      }
+    ).catch((invErr) => {
+      console.error("[POS Checkout] Inventory stock deduction non-fatal error:", invErr);
+    });
+
+    const billDoc = await BillModel.create({
+      restaurantId: toObjectId(actor.restaurantId),
+      branchId: toObjectId(input.branchId),
+      orderId: toObjectId(String(orderDoc._id)),
+      invoiceNumber,
+      items: verifiedLines.map((l) => ({
+        menuItemId: l.menuItemId,
+        name: l.name,
+        price: l.price,
+        quantity: l.quantity,
+        discount: 0,
+        tax: 0,
+        subtotal: l.subtotal,
+        notes: l.notes,
+        modifiers: [],
+        customizations: l.customizations,
+      })),
+      subtotal,
+      discount: discountAmount,
+      discountConfig: {
+        kind: discountType,
+        value: input.discountValue ?? 0,
+        amount: discountAmount,
+        couponCode: "",
+      },
+      tax: gstBreakdown.totalTax,
+      taxConfig: {
+        kind: taxMode,
+        label: isInterState ? "IGST" : "GST",
+        rate: taxRate,
+        amount: gstBreakdown.totalTax,
+        cgstRate: gstBreakdown.cgstRate,
+        cgstAmount: gstBreakdown.cgstAmount,
+        sgstRate: gstBreakdown.sgstRate,
+        sgstAmount: gstBreakdown.sgstAmount,
+        igstRate: gstBreakdown.igstRate,
+        igstAmount: gstBreakdown.igstAmount,
+        isInterState: gstBreakdown.isInterState,
+      },
+      serviceCharge: 0,
+      grandTotal,
+      amountPaid: totalTenderPaid,
+      changeGiven: changeAmount,
+      paymentStatus,
+      paymentMethod: primaryPaymentMethod,
+      notes: input.notes?.trim() || "",
+      cashierId: toObjectId(actor.userId),
+      createdBy: toObjectId(actor.userId),
+      updatedBy: toObjectId(actor.userId),
+    });
+
+    if (input.paymentTenders && input.paymentTenders.length > 0) {
+      for (const tender of input.paymentTenders) {
+        if (tender.amount > 0) {
+          await PaymentModel.create({
+            restaurantId: toObjectId(actor.restaurantId),
+            billId: toObjectId(String(billDoc._id)),
+            amount: tender.amount,
+            method: tender.method,
+            status: "completed",
+            reference: tender.reference?.trim() || "",
+            cashReceived: tender.cashReceived ?? 0,
+            changeGiven: tender.changeGiven ?? 0,
+            createdBy: toObjectId(actor.userId),
+          });
+        }
+      }
+    }
+
+    if (tableDoc) {
+      await RestaurantTableModel.findByIdAndUpdate(toObjectId(String(tableDoc._id)), {
+        $set: { status: "occupied" },
+      }).catch(() => {});
+    }
+
+    const serializedBill = serializeBill(billDoc, {
+      orderNumber,
+      customerLabel,
+    });
+
+    return {
+      bill: serializedBill,
+      order: serializedOrder,
+      invoiceNumber,
+      changeAmount,
+      gstBreakdown,
+    };
+  },
+
+  async recordPosPayment(
+    input: { billId: string; tenders: PosPaymentTender[] },
+    actor: { restaurantId: string; userId: string }
+  ): Promise<{ bill: Bill; changeAmount: number }> {
+    await connectToDatabase();
+    if (!isValidObjectId(input.billId)) {
+      throw Object.assign(new Error("Invalid bill ID"), {
+        code: "VALIDATION_ERROR",
+      });
+    }
+
+    const billDoc = await BillModel.findOne(
+      notDeletedFilter({
+        _id: toObjectId(input.billId),
+        restaurantId: toObjectId(actor.restaurantId),
+      }) as Filter
+    ).exec();
+
+    if (!billDoc) {
+      throw Object.assign(new Error("Bill not found or access denied"), {
+        code: "NOT_FOUND",
+      });
+    }
+
+    const grandTotal = billDoc.grandTotal ?? 0;
+    const previousPaid = billDoc.amountPaid ?? 0;
+
+    let newTendersTotal = 0;
+    let changeAmount = 0;
+
+    for (const tender of input.tenders) {
+      newTendersTotal += Math.max(0, tender.amount);
+      if (
+        tender.method === "cash" &&
+        tender.cashReceived &&
+        tender.cashReceived > tender.amount
+      ) {
+        changeAmount = Math.max(
+          0,
+          Math.round((tender.cashReceived - tender.amount) * 100) / 100
+        );
+      }
+    }
+
+    const newTotalPaid =
+      Math.round((previousPaid + newTendersTotal) * 100) / 100;
+    const newPaymentStatus: BillPaymentStatus =
+      newTotalPaid >= grandTotal - 0.001
+        ? "paid"
+        : newTotalPaid > 0
+          ? "partially-paid"
+          : "pending";
+
+    const updatedBillDoc = await BillModel.findOneAndUpdate(
+      notDeletedFilter({
+        _id: toObjectId(String(billDoc._id)),
+        restaurantId: toObjectId(actor.restaurantId),
+      }) as Filter,
+      {
+        $set: {
+          amountPaid: newTotalPaid,
+          changeGiven: changeAmount,
+          paymentStatus: newPaymentStatus,
+          updatedBy: toObjectId(actor.userId),
+        },
+        $inc: { version: 1 },
+      },
+      { new: true }
+    ).exec();
+
+    for (const tender of input.tenders) {
+      if (tender.amount > 0) {
+        await PaymentModel.create({
+          restaurantId: toObjectId(actor.restaurantId),
+          billId: toObjectId(String(billDoc._id)),
+          amount: tender.amount,
+          method: tender.method,
+          status: "completed",
+          reference: tender.reference?.trim() || "",
+          cashReceived: tender.cashReceived ?? 0,
+          changeGiven: tender.changeGiven ?? changeAmount,
+          createdBy: toObjectId(actor.userId),
+        });
+      }
+    }
+
+    if (billDoc.orderId) {
+      await OrderModel.findByIdAndUpdate(billDoc.orderId, {
+        $set: {
+          paymentStatus: newPaymentStatus,
+          updatedBy: toObjectId(actor.userId),
+        },
+      }).catch(() => {});
+    }
+
+    const serialized = await withLabels((updatedBillDoc ?? billDoc) as BillDocument);
+    return { bill: serialized, changeAmount };
+  },
+
+  async refundPosBill(
+    input: { billId: string; reason: string },
+    actor: { restaurantId: string; userId: string }
+  ): Promise<Bill> {
+    await connectToDatabase();
+    if (!isValidObjectId(input.billId)) {
+      throw Object.assign(new Error("Invalid bill ID"), {
+        code: "VALIDATION_ERROR",
+      });
+    }
+
+    const billDoc = await BillModel.findOne(
+      notDeletedFilter({
+        _id: toObjectId(input.billId),
+        restaurantId: toObjectId(actor.restaurantId),
+      }) as Filter
+    ).exec();
+
+    if (!billDoc) {
+      throw Object.assign(new Error("Bill not found or access denied"), {
+        code: "NOT_FOUND",
+      });
+    }
+
+    const updatedBillDoc = await BillModel.findOneAndUpdate(
+      notDeletedFilter({
+        _id: toObjectId(String(billDoc._id)),
+        restaurantId: toObjectId(actor.restaurantId),
+      }) as Filter,
+      {
+        $set: {
+          paymentStatus: "refunded",
+          notes: billDoc.notes
+            ? `${billDoc.notes} | Refunded: ${input.reason}`
+            : `Refunded: ${input.reason}`,
+          updatedBy: toObjectId(actor.userId),
+        },
+        $inc: { version: 1 },
+      },
+      { new: true }
+    ).exec();
+
+    if (billDoc.orderId) {
+      await OrderModel.findByIdAndUpdate(billDoc.orderId, {
+        $set: {
+          paymentStatus: "refunded",
+          status: "cancelled",
+          updatedBy: toObjectId(actor.userId),
+        },
+        $push: {
+          statusHistory: {
+            status: "cancelled",
+            changedAt: new Date(),
+            changedBy: toObjectId(actor.userId),
+            note: `Refunded/Voided via POS: ${input.reason}`,
+          },
+        },
+      }).catch(() => {});
+    }
+
+    return withLabels((updatedBillDoc ?? billDoc) as BillDocument);
+  },
+
+  async getInvoicePrintData(
+    billId: string,
+    restaurantId: string
+  ): Promise<InvoicePrintData> {
+    await connectToDatabase();
+    if (!isValidObjectId(billId)) throw new Error("Invalid bill ID");
+
+    const billDoc = await BillModel.findOne(
+      notDeletedFilter({
+        _id: toObjectId(billId),
+        restaurantId: toObjectId(restaurantId),
+      }) as Filter
+    ).exec();
+
+    if (!billDoc) throw new Error("Bill not found");
+
+    const [restaurant, branch, order, payments, cashier] = await Promise.all([
+      RestaurantModel.findById(restaurantId).lean().exec(),
+      billDoc.branchId
+        ? BranchModel.findById(billDoc.branchId).lean().exec()
+        : null,
+      billDoc.orderId
+        ? OrderModel.findById(billDoc.orderId).lean().exec()
+        : null,
+      PaymentModel.find(
+        notDeletedFilter({
+          billId: toObjectId(String(billDoc._id)),
+          restaurantId: toObjectId(restaurantId),
+        }) as Filter
+      )
+        .sort({ createdAt: 1 })
+        .lean()
+        .exec(),
+      billDoc.cashierId
+        ? UserModel.findById(billDoc.cashierId)
+            .select({ name: 1 })
+            .lean()
+            .exec()
+        : null,
+    ]);
+
+    const taxCfg = billDoc.taxConfig as {
+      rate?: number;
+      cgstRate?: number;
+      cgstAmount?: number;
+      sgstRate?: number;
+      sgstAmount?: number;
+      igstRate?: number;
+      igstAmount?: number;
+      amount?: number;
+      taxMode?: "exclusive" | "inclusive";
+    } | null;
+    const gstBreakdown: GstBreakdown = {
+      taxableAmount: Math.max(
+        0,
+        (billDoc.subtotal ?? 0) - (billDoc.discount ?? 0)
+      ),
+      taxRate: taxCfg?.rate ?? 5,
+      cgstRate: taxCfg?.cgstRate ?? (taxCfg?.rate ? taxCfg.rate / 2 : 2.5),
+      cgstAmount:
+        taxCfg?.cgstAmount ??
+        (taxCfg?.amount ? taxCfg.amount / 2 : (billDoc.tax ?? 0) / 2),
+      sgstRate: taxCfg?.sgstRate ?? (taxCfg?.rate ? taxCfg.rate / 2 : 2.5),
+      sgstAmount:
+        taxCfg?.sgstAmount ??
+        (taxCfg?.amount ? taxCfg.amount / 2 : (billDoc.tax ?? 0) / 2),
+      igstRate: taxCfg?.igstRate ?? 0,
+      igstAmount: taxCfg?.igstAmount ?? 0,
+      totalTax: billDoc.tax ?? 0,
+      taxMode: taxCfg?.taxMode === "inclusive" ? "inclusive" : "exclusive",
+      isInterState: Boolean(taxCfg?.igstRate && taxCfg.igstRate > 0),
+    };
+
+    let tableLabel: string | null = null;
+    if (order?.tableId) {
+      const tDoc = await RestaurantTableModel.findById(order.tableId)
+        .select({ tableNumber: 1, tableName: 1 })
+        .lean()
+        .exec();
+      if (tDoc) {
+        tableLabel = `${tDoc.tableName || "Table"} (${tDoc.tableNumber})`;
+      }
+    }
+
+    return {
+      invoiceNumber: billDoc.invoiceNumber,
+      orderNumber: order?.orderNumber ?? null,
+      issuedAt:
+        billDoc.createdAt instanceof Date
+          ? billDoc.createdAt.toISOString()
+          : String(billDoc.createdAt),
+      restaurantName: restaurant?.name || "DineFlow Restaurant",
+      legalName: branch?.name || restaurant?.name || "DineFlow Restaurant",
+      logo: restaurant?.logo || "",
+      address: branch?.address || restaurant?.address || "",
+      phone: branch?.phone || restaurant?.phone || "",
+      email: branch?.email || restaurant?.email || "",
+      gstin: branch?.gstin || "",
+      branchName: branch?.name || "Main Branch",
+      branchAddress: branch?.address || "",
+      branchGstin: branch?.gstin || "",
+      tableLabel,
+      orderType: order?.orderType || "dine-in",
+      customerLabel: null,
+      customerPhone: null,
+      cashierName: cashier?.name || "Staff",
+      items: (billDoc.items ?? []).map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        rate: i.price,
+        discount: i.discount ?? 0,
+        amount: i.subtotal,
+        notes: i.notes || "",
+        customizations: ((i as unknown as { customizations?: Array<{ optionName?: string }> }).customizations ?? []).map(
+          (c) => `+${c.optionName}`
+        ),
+      })),
+      subtotal: billDoc.subtotal ?? 0,
+      discount: billDoc.discount ?? 0,
+      discountLabel:
+        billDoc.discountConfig?.kind === "percentage"
+          ? `${billDoc.discountConfig.value}%`
+          : "Fixed",
+      taxableAmount: gstBreakdown.taxableAmount,
+      gstBreakdown,
+      serviceCharge: billDoc.serviceCharge ?? 0,
+      grandTotal: billDoc.grandTotal ?? 0,
+      amountPaid: billDoc.amountPaid ?? 0,
+      changeGiven: billDoc.changeGiven ?? 0,
+      paymentStatus: billDoc.paymentStatus as BillPaymentStatus,
+      payments: payments.map((p) => ({
+        method: p.method,
+        amount: p.amount,
+        reference: p.reference || "",
+        timestamp:
+          p.createdAt instanceof Date
+            ? p.createdAt.toISOString()
+            : String(p.createdAt),
+      })),
+      footerNote: "Thank you for dining with us!",
+    };
+  },
 };
 
 export const paymentRepository = {
@@ -542,6 +1296,47 @@ export const paymentRepository = {
         }).exec();
       }
 
+      if (paymentStatus === "paid") {
+        (async () => {
+          try {
+            let customerEmail = null;
+            let customerPhone = null;
+            let customerName = "Customer";
+            if (bill.customerId) {
+              const customer = await CustomerModel.findById(bill.customerId).lean();
+              if (customer) {
+                customerEmail = customer.email;
+                customerPhone = customer.phone;
+                customerName = customer.fullName || "Customer";
+              }
+            }
+
+            if (customerEmail || customerPhone) {
+               await NotificationService.dispatch({
+                 eventType: "PAYMENT_SUCCESS",
+                 restaurantId: data.restaurantId,
+                 branchId: bill.branchId ? bill.branchId.toString() : null,
+                 referenceKey: `PAYMENT_SUCCESS:${bill._id}`,
+                 recipient: {
+                   email: customerEmail,
+                   phone: customerPhone,
+                   userId: bill.customerId?.toString(),
+                 },
+                 variables: {
+                   customerName,
+                   orderNumber: bill.orderId?.toString() || "", // We might not have the order number directly here without populating
+                   invoiceNumber: bill.invoiceNumber || "",
+                   totalAmount: bill.grandTotal,
+                   paymentMethod: data.method,
+                 }
+               });
+            }
+          } catch (e) {
+             console.error("Payment notification failed", e);
+          }
+        })();
+      }
+
       return serializePayment(payment, bill.invoiceNumber);
     } catch (error) {
       if (
@@ -612,6 +1407,18 @@ export const paymentRepository = {
             : derivePaymentStatus(bill.grandTotal ?? 0, amountPaid);
         bill.updatedBy = actorObjectId(data.updatedBy);
         await bill.save();
+
+        if (bill.orderId && bill.paymentStatus === "refunded") {
+          InventoryConsumptionService.reverseOrderStock(
+            data.restaurantId,
+            String(bill.branchId),
+            String(bill.orderId),
+            data.notes || "Stock reversal for refunded POS bill",
+            data.updatedBy || undefined
+          ).catch((revErr) => {
+            console.error("[POS Refund] Inventory reversal non-fatal error:", revErr);
+          });
+        }
       }
 
       return serializePayment(payment, bill?.invoiceNumber);

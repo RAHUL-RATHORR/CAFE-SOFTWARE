@@ -1,8 +1,9 @@
 import { auth } from "@/lib/auth/auth";
 import { hasPermission } from "@/lib/rbac";
-import { isValidObjectId } from "@/lib/database";
+import { isValidObjectId, notDeletedFilter, toObjectId } from "@/lib/database";
 import { billingFailure } from "@/lib/billing";
 import { DEMO_RESTAURANT_ID } from "@/actions/categories/context";
+import { EmployeeModel } from "@/models/staff";
 import type { BillingActionResult } from "@/types/billing";
 import type { PermissionKey } from "@/types/rbac";
 import type { AppRole } from "@/types/navigation";
@@ -11,10 +12,13 @@ export type BillingActor = {
   userId: string;
   role: AppRole;
   restaurantId: string;
+  branchId: string | null;
+  canSwitchBranch: boolean;
 };
 
 export async function resolveBillingActor(
-  permission: PermissionKey | PermissionKey[]
+  permission: PermissionKey | PermissionKey[],
+  requestedBranchId?: string | null
 ): Promise<BillingActionResult<BillingActor>> {
   const session = await auth();
   if (!session?.user) {
@@ -41,12 +45,44 @@ export async function resolveBillingActor(
     );
   }
 
+  const isMultiBranchRole =
+    role === "super-admin" ||
+    role === "restaurant-owner" ||
+    role === "manager";
+
+  let branchId: string | null = null;
+  if (!isMultiBranchRole && session.user.id && isValidObjectId(session.user.id)) {
+    try {
+      const emp = await EmployeeModel.findOne(
+        notDeletedFilter({
+          restaurantId: toObjectId(restaurantId),
+          userId: toObjectId(session.user.id),
+        }) as Record<string, unknown>
+      )
+        .select({ branchId: 1 })
+        .lean()
+        .exec();
+
+      if (emp?.branchId) {
+        branchId = String(emp.branchId);
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  if (isMultiBranchRole && requestedBranchId && isValidObjectId(requestedBranchId)) {
+    branchId = requestedBranchId;
+  }
+
   return {
     success: true,
     data: {
       userId: session.user.id,
       role,
       restaurantId,
+      branchId,
+      canSwitchBranch: isMultiBranchRole,
     },
   };
 }

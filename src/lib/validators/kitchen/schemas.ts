@@ -7,8 +7,10 @@ import {
 
 export const searchKitchenSchema = z.object({
   q: z.string().trim().max(120).optional().or(z.literal("")),
+  branchId: z.string().trim().optional().or(z.literal("")),
   status: z.enum(["all", ...ORDER_STATUSES]).default("all"),
   orderType: z.enum(["all", ...ORDER_TYPES]).default("all"),
+  orderSource: z.enum(["all", "qr", "pos", "other"]).default("all"),
   priority: z.enum(["all", ...ORDER_PRIORITIES]).default("all"),
   tableId: z.string().trim().optional().or(z.literal("")),
   assignedChefId: z.string().trim().optional().or(z.literal("")),
@@ -19,6 +21,31 @@ export const updateKitchenStatusSchema = z.object({
   id: z.string().trim().min(1, "Order id is required"),
   status: z.enum(ORDER_STATUSES),
   note: z.string().trim().max(255).optional().or(z.literal("")),
+});
+
+export const acceptKitchenOrderSchema = z.object({
+  id: z.string().trim().min(1, "Order id is required"),
+  note: z.string().trim().max(255).optional().or(z.literal("")),
+});
+
+export const startPreparingKitchenOrderSchema = z.object({
+  id: z.string().trim().min(1, "Order id is required"),
+  note: z.string().trim().max(255).optional().or(z.literal("")),
+});
+
+export const markReadyKitchenOrderSchema = z.object({
+  id: z.string().trim().min(1, "Order id is required"),
+  note: z.string().trim().max(255).optional().or(z.literal("")),
+});
+
+export const markServedKitchenOrderSchema = z.object({
+  id: z.string().trim().min(1, "Order id is required"),
+  note: z.string().trim().max(255).optional().or(z.literal("")),
+});
+
+export const cancelKitchenOrderSchema = z.object({
+  id: z.string().trim().min(1, "Order id is required"),
+  reason: z.string().trim().max(255).optional().or(z.literal("")),
 });
 
 export const updateKitchenPrioritySchema = z.object({
@@ -32,6 +59,17 @@ export const completeKitchenOrderSchema = z.object({
 
 export type SearchKitchenInput = z.infer<typeof searchKitchenSchema>;
 export type UpdateKitchenStatusInput = z.infer<typeof updateKitchenStatusSchema>;
+export type AcceptKitchenOrderInput = z.infer<typeof acceptKitchenOrderSchema>;
+export type StartPreparingKitchenOrderInput = z.infer<
+  typeof startPreparingKitchenOrderSchema
+>;
+export type MarkReadyKitchenOrderInput = z.infer<
+  typeof markReadyKitchenOrderSchema
+>;
+export type MarkServedKitchenOrderInput = z.infer<
+  typeof markServedKitchenOrderSchema
+>;
+export type CancelKitchenOrderInput = z.infer<typeof cancelKitchenOrderSchema>;
 export type UpdateKitchenPriorityInput = z.infer<
   typeof updateKitchenPrioritySchema
 >;

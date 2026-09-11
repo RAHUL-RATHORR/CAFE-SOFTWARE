@@ -11,8 +11,13 @@ export {
   buildKitchenSummary,
   nextKitchenStatus,
   columnDefaultStatus,
+  isValidStatusTransition,
+  calculateUrgency,
 } from "./tickets";
 export {
+  buildKitchenChannel,
+  emitKitchenEvent,
+  subscribeKitchenChannel,
   connectKitchenWebSocket,
   startKitchenPolling,
   subscribeToKitchenEvents,
