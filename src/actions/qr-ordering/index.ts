@@ -83,10 +83,100 @@ export async function getPublicMenu(
       query.data
     );
     if (!data) {
+      if (process.env.NODE_ENV === "development" || process.env.ENABLE_DEMO_LOGIN === "true") {
+        const param = params.data.restaurant;
+        const formattedName = param
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (char) => char.toUpperCase());
+
+        const demoRestaurant = {
+          id: "650000000000000000000001",
+          name: formattedName,
+          slug: param.toLowerCase(),
+          logo: "",
+          currency: "INR",
+          timezone: "Asia/Kolkata",
+          address: "MG Road, Connaught Place, New Delhi",
+          phone: "+91 9876543210",
+        };
+
+        const demoCategories = [
+          { id: "cat-1", name: "Coffee & Beverages", slug: "beverages", description: "Hot & cold artisanal drinks", displayOrder: 1, isActive: true, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { id: "cat-2", name: "Pizzas & Burgers", slug: "mains", description: "Freshly baked pizzas & gourmet burgers", displayOrder: 2, isActive: true, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { id: "cat-3", name: "Desserts & Shakes", slug: "desserts", description: "Sweet treats & handcrafted shakes", displayOrder: 3, isActive: true, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        ];
+
+        const demoItems = [
+          { id: "item-1", name: "Royal Hazelnut Cold Coffee", description: "Smooth espresso blended with hazelnut syrup, chilled milk and ice cream", price: 220, categoryId: "cat-1", isVeg: true, isAvailable: true, isFeatured: true, tags: ["popular", "cold"], image: "", taxRate: 5, preparationTime: 5, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { id: "item-2", name: "Artisanal Double Cheese Pizza", description: "Mozzarella & cheddar cheese blend with fresh basil on sourdough crust", price: 450, categoryId: "cat-2", isVeg: true, isAvailable: true, isFeatured: true, tags: ["pizza", "cheese"], image: "", taxRate: 5, preparationTime: 15, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { id: "item-3", name: "Classic Smoked Chicken Burger", description: "Juicy smoked chicken patty with caramelized onions, pickles and garlic aioli", price: 380, categoryId: "cat-2", isVeg: false, isAvailable: true, isFeatured: false, tags: ["burger", "non-veg"], image: "", taxRate: 5, preparationTime: 12, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 3, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { id: "item-4", name: "Belgian Chocolate Lava Cake", description: "Warm molten dark chocolate cake served with vanilla bean ice cream", price: 240, categoryId: "cat-3", isVeg: true, isAvailable: true, isFeatured: true, tags: ["dessert", "chocolate"], image: "", taxRate: 5, preparationTime: 8, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 4, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        ];
+
+        return qrSuccess({
+          restaurant: demoRestaurant,
+          table: params.data.table ? { id: "t1", tableNumber: params.data.table, tableName: `Table ${params.data.table}`, capacity: 4, status: "available" } : null,
+          categories: demoCategories as any,
+          featuredItems: demoItems.filter((i) => i.isFeatured) as any,
+          items: demoItems as any,
+          qr: {
+            type: params.data.table ? "table" : "restaurant",
+            code: "DEMO_QR",
+            dynamicPayload: "DEMO_QR",
+            validated: true,
+            expired: false,
+          },
+        });
+      }
       return qrFailure("RESTAURANT_NOT_FOUND", "Restaurant not found.");
     }
     return qrSuccess(data);
   } catch {
+    if (process.env.NODE_ENV === "development" || process.env.ENABLE_DEMO_LOGIN === "true") {
+      const param = params.data.restaurant;
+      const formattedName = param
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+
+      const demoRestaurant = {
+        id: "650000000000000000000001",
+        name: formattedName,
+        slug: param.toLowerCase(),
+        logo: "",
+        currency: "INR",
+        timezone: "Asia/Kolkata",
+        address: "MG Road, Connaught Place, New Delhi",
+        phone: "+91 9876543210",
+      };
+
+      const demoCategories = [
+        { id: "cat-1", name: "Coffee & Beverages", slug: "beverages", description: "Hot & cold artisanal drinks", displayOrder: 1, isActive: true, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "cat-2", name: "Pizzas & Burgers", slug: "mains", description: "Freshly baked pizzas & gourmet burgers", displayOrder: 2, isActive: true, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "cat-3", name: "Desserts & Shakes", slug: "desserts", description: "Sweet treats & handcrafted shakes", displayOrder: 3, isActive: true, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ];
+
+      const demoItems = [
+        { id: "item-1", name: "Royal Hazelnut Cold Coffee", description: "Smooth espresso blended with hazelnut syrup, chilled milk and ice cream", price: 220, categoryId: "cat-1", isVeg: true, isAvailable: true, isFeatured: true, tags: ["popular", "cold"], image: "", taxRate: 5, preparationTime: 5, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "item-2", name: "Artisanal Double Cheese Pizza", description: "Mozzarella & cheddar cheese blend with fresh basil on sourdough crust", price: 450, categoryId: "cat-2", isVeg: true, isAvailable: true, isFeatured: true, tags: ["pizza", "cheese"], image: "", taxRate: 5, preparationTime: 15, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "item-3", name: "Classic Smoked Chicken Burger", description: "Juicy smoked chicken patty with caramelized onions, pickles and garlic aioli", price: 380, categoryId: "cat-2", isVeg: false, isAvailable: true, isFeatured: false, tags: ["burger", "non-veg"], image: "", taxRate: 5, preparationTime: 12, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 3, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "item-4", name: "Belgian Chocolate Lava Cake", description: "Warm molten dark chocolate cake served with vanilla bean ice cream", price: 240, categoryId: "cat-3", isVeg: true, isAvailable: true, isFeatured: true, tags: ["dessert", "chocolate"], image: "", taxRate: 5, preparationTime: 8, isDeleted: false, restaurantId: demoRestaurant.id, branchId: "b1", displayOrder: 4, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ];
+
+      return qrSuccess({
+        restaurant: demoRestaurant,
+        table: params.data.table ? { id: "t1", tableNumber: params.data.table, tableName: `Table ${params.data.table}`, capacity: 4, status: "available" } : null,
+        categories: demoCategories as any,
+        featuredItems: demoItems.filter((i) => i.isFeatured) as any,
+        items: demoItems as any,
+        qr: {
+          type: params.data.table ? "table" : "restaurant",
+          code: "DEMO_QR",
+          dynamicPayload: "DEMO_QR",
+          validated: true,
+          expired: false,
+        },
+      });
+    }
     return qrFailure("DATABASE_ERROR", "Unable to load menu.");
   }
 }
