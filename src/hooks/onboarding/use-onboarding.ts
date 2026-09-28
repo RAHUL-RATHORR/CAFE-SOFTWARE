@@ -1,5 +1,7 @@
 "use client";
 
+import { submitOnboarding } from "@/actions/onboarding.actions";
+
 import { useMemo } from "react";
 import { onboardingSteps, ONBOARDING_TOTAL_STEPS } from "@/config/onboarding";
 import {
@@ -51,9 +53,21 @@ export function useOnboarding() {
     [draft]
   );
 
+
   /** Finish placeholder — applies tenant draft locally, no API. */
-  function finishPlaceholder() {
+  async function finishPlaceholder() {
     const tenant = draftToTenantPlaceholder(draft);
+    try {
+      const result = await submitOnboarding(draft);
+      if (result.success) {
+        // successfully saved to db
+      } else {
+        console.error("Failed to save onboarded restaurant:", result.error);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    
     applyOnboardingTenant(tenant);
     completeOnboarding();
   }
