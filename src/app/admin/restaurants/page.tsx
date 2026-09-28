@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/auth";
-import { dbConnect } from "@/lib/db/mongoose";
+import { auth } from "@/lib/auth/auth";
+import { connectToDatabase } from "@/lib/database/connection";
 import { RestaurantModel } from "@/models/restaurant/restaurant.model";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -18,14 +18,15 @@ export const metadata = {
 };
 
 export default async function AdminRestaurantsPage() {
-  const user = await getCurrentUser();
+  const session = await auth();
+  const user = session?.user as any;
 
   // Protect this route for super-admin only
   if (!user || user.role !== "super-admin") {
     redirect("/dashboard");
   }
 
-  await dbConnect();
+  await connectToDatabase();
 
   // Fetch all non-deleted restaurants
   const restaurants = await RestaurantModel.find({ isDeleted: false })
