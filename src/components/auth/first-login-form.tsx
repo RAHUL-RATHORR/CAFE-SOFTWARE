@@ -31,7 +31,7 @@ export function FirstLoginForm() {
     },
   });
 
-  const onSubmit = handleSubmit(async (values) => {
+  const onSubmit = handleSubmit(async (_values) => {
     setSubmitting(true);
     setErrorCode(null);
 

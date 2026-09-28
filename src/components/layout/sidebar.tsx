@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { ChevronsLeft, ChevronsRight, PanelLeft, Utensils } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, PanelLeft, Utensils, LayoutDashboard, Building2, CreditCard, ShieldAlert, Bell, FileText } from "lucide-react";
 import {
   DASHBOARD_HREF,
   isNavItemActive,
@@ -14,6 +14,7 @@ import { siteConfig } from "@/config/site";
 import { useUiStore } from "@/store/ui-store";
 import { useShallow } from "@/store/selectors";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useCurrentUser } from "@/hooks/auth/use-current-user";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -32,6 +33,20 @@ type SidebarProps = {
 
 export function Sidebar({ variant = "desktop", onNavigate }: SidebarProps) {
   const pathname = usePathname();
+  const { user } = useCurrentUser();
+  const isSuperAdmin = user?.role === "super-admin";
+
+  const superAdminNavigation = [
+    { title: "Platform Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { title: "Restaurants", href: "/admin/restaurants", icon: Building2 },
+    { title: "Subscriptions", href: "/subscription/plans", icon: CreditCard },
+    { title: "System Backups", href: "/administration/backups", icon: ShieldAlert },
+    { title: "Notifications", href: "/administration/notifications", icon: Bell },
+    { title: "System Reports", href: "/administration/reports", icon: FileText },
+  ];
+
+  const activeNavigation = isSuperAdmin ? superAdminNavigation : mainNavigation;
+
   const {
     isSidebarCollapsed,
     toggleSidebar,
@@ -112,7 +127,7 @@ export function Sidebar({ variant = "desktop", onNavigate }: SidebarProps) {
                 {siteConfig.name}
               </p>
               <p className="truncate text-xs text-muted-foreground">
-                Restaurant Suite
+                {isSuperAdmin ? "Super Admin Console" : "Restaurant Suite"}
               </p>
             </div>
           ) : null}
@@ -123,7 +138,7 @@ export function Sidebar({ variant = "desktop", onNavigate }: SidebarProps) {
 
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="flex flex-col gap-1" aria-label="Main navigation">
-          {mainNavigation.map((item) => {
+          {activeNavigation.map((item) => {
             const isActive = isNavItemActive(pathname, item.href);
             const Icon = item.icon;
 

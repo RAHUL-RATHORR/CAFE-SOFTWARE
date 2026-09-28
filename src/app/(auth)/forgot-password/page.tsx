@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import {
   Card,
   CardContent,
@@ -24,7 +25,9 @@ export default function ForgotPasswordPage() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ForgotPasswordForm />
+        <Suspense fallback={<div className="p-4 text-center text-sm text-muted-foreground">Loading...</div>}>
+          <ForgotPasswordForm />
+        </Suspense>
       </CardContent>
     </Card>
   );
