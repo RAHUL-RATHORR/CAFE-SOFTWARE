@@ -27,15 +27,16 @@ export async function submitOnboarding(draft: any) {
       currency: draft.regional.currency,
       timezone: draft.regional.timezone,
       logo: draft.branding.logo,
-      subscriptionPlan: "trial",
+      subscriptionPlan: "free",
       subscriptionStatus: "active",
       isActive: true,
-    });
+    }) as any;
 
     // 2. Create the default Branch
     await BranchModel.create({
       restaurantId: newRestaurant._id,
       name: "Main Branch",
+      branchCode: "MAIN",
       isMainBranch: true,
       email: draft.restaurant.email,
       phone: draft.restaurant.phone,
@@ -43,10 +44,11 @@ export async function submitOnboarding(draft: any) {
       city: draft.address.city,
       state: draft.address.state,
       country: draft.address.country,
-      zipCode: draft.address.zipCode,
+      postalCode: draft.address.zipCode || "00000",
       timezone: draft.regional.timezone,
-      isActive: true,
-    });
+      currency: draft.regional.currency,
+      status: "active",
+    }) as any;
 
     return { success: true, restaurantId: newRestaurant._id.toString() };
   } catch (error: any) {
