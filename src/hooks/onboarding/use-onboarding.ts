@@ -63,9 +63,11 @@ export function useOnboarding() {
         // successfully saved to db
       } else {
         console.error("Failed to save onboarded restaurant:", result.error);
+        alert("Failed to save restaurant to DB: " + result.error);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert("Error saving: " + e.message);
     }
     
     applyOnboardingTenant(tenant);
